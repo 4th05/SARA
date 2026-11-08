@@ -1,0 +1,9 @@
+{
+  "ollama_model": "qwen3.5:0.8b-q8_0",
+  "ollama_url": "http://127.0.0.1:11434",
+  "workflow_url": "http://127.0.0.1:1880/ioe/event",
+  "command_timeout_seconds": 4,
+  "inference_timeout_seconds": 40,
+  "speech_model": "tiny",
+  "speech_threshold": 0.012
+}

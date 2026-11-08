@@ -1,0 +1,47 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "request_id": {
+      "maxLength": 80,
+      "minLength": 1,
+      "title": "Request Id",
+      "type": "string"
+    },
+    "conversation_id": {
+      "default": "demo",
+      "maxLength": 80,
+      "minLength": 1,
+      "title": "Conversation Id",
+      "type": "string"
+    },
+    "source": {
+      "default": "text",
+      "enum": [
+        "text",
+        "voice",
+        "gesture"
+      ],
+      "title": "Source",
+      "type": "string"
+    },
+    "text": {
+      "maxLength": 1000,
+      "minLength": 1,
+      "title": "Text",
+      "type": "string"
+    },
+    "confidence": {
+      "default": 1.0,
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Confidence",
+      "type": "number"
+    }
+  },
+  "required": [
+    "request_id",
+    "text"
+  ],
+  "title": "InputEvent",
+  "type": "object"
+}

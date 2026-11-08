@@ -1,0 +1,21 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Start IoE system",
+      "type": "process",
+      "command": "${workspaceFolder}/tools/start_system.sh",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "Start Node-RED editor",
+      "type": "process",
+      "command": "${workspaceFolder}/tools/start_node_red.sh",
+      "problemMatcher": []
+    }
+  ]
+}

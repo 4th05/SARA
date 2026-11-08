@@ -1,0 +1,30 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "command_id": {
+      "maxLength": 80,
+      "minLength": 1,
+      "title": "Command Id",
+      "type": "string"
+    },
+    "device": {
+      "enum": [
+        "lights",
+        "pump"
+      ],
+      "title": "Device",
+      "type": "string"
+    },
+    "value": {
+      "title": "Value",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "command_id",
+    "device",
+    "value"
+  ],
+  "title": "DeviceCommand",
+  "type": "object"
+}

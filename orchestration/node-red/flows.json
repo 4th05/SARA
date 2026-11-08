@@ -1,1 +1,505 @@
-[]
+[
+  {
+    "id": "ioe-workflow",
+    "type": "tab",
+    "label": "IoE workflow",
+    "disabled": false,
+    "info": "Recognition -> validated intent -> pending state -> simulated MCU -> feedback -> confirmed state. Python owns state. Service requests use a local token."
+  },
+  {
+    "id": "ioe-input",
+    "z": "ioe-workflow",
+    "type": "http in",
+    "name": "Recognition / typed request",
+    "x": 170,
+    "y": 100,
+    "wires": [
+      [
+        "ioe-prepare"
+      ]
+    ],
+    "url": "/ioe/event",
+    "method": "post",
+    "upload": false
+  },
+  {
+    "id": "ioe-prepare",
+    "z": "ioe-workflow",
+    "type": "function",
+    "name": "Preserve input and call intent service",
+    "x": 450,
+    "y": 100,
+    "wires": [
+      [
+        "ioe-interpret"
+      ]
+    ],
+    "func": "msg.headers = {\n    Authorization: \"Bearer \" + env.get(\"IOE_INTERNAL_TOKEN\"),\n    \"Content-Type\": \"application/json\"\n};\nmsg.requestTimeout = 45000;\nconst gateway = env.get(\"IOE_GATEWAY_URL\") || \"http://127.0.0.1:8080\";\n\nmsg.input = {...msg.payload};\nmsg.input.request_id = msg.input.request_id || msg._msgid;\nmsg.input.conversation_id = msg.input.conversation_id || \"node-red-demo\";\nmsg.payload = msg.input;\nmsg.url = gateway + \"/internal/interpret\";\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": []
+  },
+  {
+    "id": "ioe-interpret",
+    "z": "ioe-workflow",
+    "type": "http request",
+    "name": "LangChain / Ollama interpretation",
+    "x": 760,
+    "y": 100,
+    "wires": [
+      [
+        "ioe-route"
+      ]
+    ],
+    "method": "POST",
+    "ret": "obj",
+    "url": "",
+    "paytoqs": "ignore",
+    "persist": false,
+    "senderr": true,
+    "headers": []
+  },
+  {
+    "id": "ioe-route",
+    "z": "ioe-workflow",
+    "type": "function",
+    "name": "Command or clarification / reply?",
+    "x": 1070,
+    "y": 100,
+    "wires": [
+      [
+        "ioe-pending-prepare"
+      ],
+      [
+        "ioe-reply-prepare"
+      ]
+    ],
+    "func": "if (msg.statusCode !== 200) {\n    const detail = typeof msg.payload === \"string\" ? msg.payload : JSON.stringify(msg.payload);\n    throw new Error(\"Gateway HTTP \" + msg.statusCode + \": \" + detail.slice(0, 400));\n}\n\nmsg.decision = msg.payload;\nreturn msg.decision.kind === \"command\" ? [msg, null] : [null, msg];",
+    "outputs": 2,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": []
+  },
+  {
+    "id": "ioe-pending-prepare",
+    "z": "ioe-workflow",
+    "type": "function",
+    "name": "Register command in Python State",
+    "x": 280,
+    "y": 240,
+    "wires": [
+      [
+        "ioe-pending"
+      ]
+    ],
+    "func": "msg.headers = {\n    Authorization: \"Bearer \" + env.get(\"IOE_INTERNAL_TOKEN\"),\n    \"Content-Type\": \"application/json\"\n};\nmsg.requestTimeout = 45000;\nconst gateway = env.get(\"IOE_GATEWAY_URL\") || \"http://127.0.0.1:8080\";\n\nmsg.payload = {event: msg.input, decision: msg.decision};\nmsg.url = gateway + \"/internal/commands\";\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": []
+  },
+  {
+    "id": "ioe-pending",
+    "z": "ioe-workflow",
+    "type": "http request",
+    "name": "Record pending command",
+    "x": 570,
+    "y": 240,
+    "wires": [
+      [
+        "ioe-mock-prepare"
+      ]
+    ],
+    "method": "POST",
+    "ret": "obj",
+    "url": "",
+    "paytoqs": "ignore",
+    "persist": false,
+    "senderr": true,
+    "headers": []
+  },
+  {
+    "id": "ioe-mock-prepare",
+    "z": "ioe-workflow",
+    "type": "function",
+    "name": "Send command to device adapter",
+    "x": 880,
+    "y": 240,
+    "wires": [
+      [
+        "ioe-mock"
+      ]
+    ],
+    "func": "if (msg.statusCode !== 200) {\n    const detail = typeof msg.payload === \"string\" ? msg.payload : JSON.stringify(msg.payload);\n    throw new Error(\"Gateway HTTP \" + msg.statusCode + \": \" + detail.slice(0, 400));\n}\n\nmsg.headers = {\n    Authorization: \"Bearer \" + env.get(\"IOE_INTERNAL_TOKEN\"),\n    \"Content-Type\": \"application/json\"\n};\nmsg.requestTimeout = 45000;\nconst gateway = env.get(\"IOE_GATEWAY_URL\") || \"http://127.0.0.1:8080\";\n\nmsg.command = msg.payload;\nmsg.url = gateway + \"/internal/mock/execute\";\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": []
+  },
+  {
+    "id": "ioe-mock",
+    "z": "ioe-workflow",
+    "type": "http request",
+    "name": "Simulated MCU: selected outcome",
+    "x": 1200,
+    "y": 240,
+    "wires": [
+      [
+        "ioe-feedback-prepare"
+      ]
+    ],
+    "method": "POST",
+    "ret": "obj",
+    "url": "",
+    "paytoqs": "ignore",
+    "persist": false,
+    "senderr": true,
+    "headers": []
+  },
+  {
+    "id": "ioe-feedback-prepare",
+    "z": "ioe-workflow",
+    "type": "function",
+    "name": "Return device feedback",
+    "x": 280,
+    "y": 360,
+    "wires": [
+      [
+        "ioe-feedback"
+      ]
+    ],
+    "func": "if (msg.statusCode !== 200) {\n    const detail = typeof msg.payload === \"string\" ? msg.payload : JSON.stringify(msg.payload);\n    throw new Error(\"Gateway HTTP \" + msg.statusCode + \": \" + detail.slice(0, 400));\n}\n\nmsg.headers = {\n    Authorization: \"Bearer \" + env.get(\"IOE_INTERNAL_TOKEN\"),\n    \"Content-Type\": \"application/json\"\n};\nmsg.requestTimeout = 45000;\nconst gateway = env.get(\"IOE_GATEWAY_URL\") || \"http://127.0.0.1:8080\";\n\nmsg.url = gateway + \"/internal/feedback\";\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": []
+  },
+  {
+    "id": "ioe-feedback",
+    "z": "ioe-workflow",
+    "type": "http request",
+    "name": "Update confirmed Python State",
+    "x": 600,
+    "y": 360,
+    "wires": [
+      [
+        "ioe-finish"
+      ]
+    ],
+    "method": "POST",
+    "ret": "obj",
+    "url": "",
+    "paytoqs": "ignore",
+    "persist": false,
+    "senderr": true,
+    "headers": []
+  },
+  {
+    "id": "ioe-reply-prepare",
+    "z": "ioe-workflow",
+    "type": "function",
+    "name": "Record clarification / conversational reply",
+    "x": 300,
+    "y": 480,
+    "wires": [
+      [
+        "ioe-reply"
+      ]
+    ],
+    "func": "msg.headers = {\n    Authorization: \"Bearer \" + env.get(\"IOE_INTERNAL_TOKEN\"),\n    \"Content-Type\": \"application/json\"\n};\nmsg.requestTimeout = 45000;\nconst gateway = env.get(\"IOE_GATEWAY_URL\") || \"http://127.0.0.1:8080\";\n\nmsg.payload = {event: msg.input, decision: msg.decision};\nmsg.url = gateway + \"/internal/reply\";\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": []
+  },
+  {
+    "id": "ioe-reply",
+    "z": "ioe-workflow",
+    "type": "http request",
+    "name": "Save assistant reply",
+    "x": 620,
+    "y": 480,
+    "wires": [
+      [
+        "ioe-finish"
+      ]
+    ],
+    "method": "POST",
+    "ret": "obj",
+    "url": "",
+    "paytoqs": "ignore",
+    "persist": false,
+    "senderr": true,
+    "headers": []
+  },
+  {
+    "id": "ioe-finish",
+    "z": "ioe-workflow",
+    "type": "function",
+    "name": "Return result to caller",
+    "x": 920,
+    "y": 400,
+    "wires": [
+      [
+        "ioe-response"
+      ],
+      [
+        "ioe-debug"
+      ]
+    ],
+    "func": "if (msg.statusCode !== 200) {\n    const detail = typeof msg.payload === \"string\" ? msg.payload : JSON.stringify(msg.payload);\n    throw new Error(\"Gateway HTTP \" + msg.statusCode + \": \" + detail.slice(0, 400));\n}\n\nmsg.statusCode = 200;\nmsg.headers = {\"Content-Type\": \"application/json\"};\nreturn msg.res ? [msg, msg] : [null, msg];",
+    "outputs": 2,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": []
+  },
+  {
+    "id": "ioe-response",
+    "z": "ioe-workflow",
+    "type": "http response",
+    "name": "Reply to gateway",
+    "x": 1210,
+    "y": 380,
+    "wires": [],
+    "statusCode": "200",
+    "headers": {}
+  },
+  {
+    "id": "ioe-debug",
+    "z": "ioe-workflow",
+    "type": "debug",
+    "name": "Workflow results",
+    "x": 1210,
+    "y": 440,
+    "wires": [],
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "complete": "payload",
+    "targetType": "msg"
+  },
+  {
+    "id": "ioe-catch",
+    "z": "ioe-workflow",
+    "type": "catch",
+    "name": "Workflow errors and unavailable services",
+    "x": 260,
+    "y": 620,
+    "wires": [
+      [
+        "ioe-failure-prepare"
+      ]
+    ],
+    "scope": [
+      "ioe-prepare",
+      "ioe-interpret",
+      "ioe-route",
+      "ioe-pending-prepare",
+      "ioe-pending",
+      "ioe-mock-prepare",
+      "ioe-mock",
+      "ioe-feedback-prepare",
+      "ioe-feedback",
+      "ioe-reply-prepare",
+      "ioe-reply",
+      "ioe-finish"
+    ],
+    "uncaught": false
+  },
+  {
+    "id": "ioe-failure-prepare",
+    "z": "ioe-workflow",
+    "type": "function",
+    "name": "Record workflow failure in Python State",
+    "x": 620,
+    "y": 620,
+    "wires": [
+      [
+        "ioe-failure"
+      ]
+    ],
+    "func": "msg.headers = {\n    Authorization: \"Bearer \" + env.get(\"IOE_INTERNAL_TOKEN\"),\n    \"Content-Type\": \"application/json\"\n};\nmsg.requestTimeout = 45000;\nconst gateway = env.get(\"IOE_GATEWAY_URL\") || \"http://127.0.0.1:8080\";\n\nmsg.payload = {request_id: msg.input?.request_id || msg._msgid,\n               message: (msg.error?.message || \"Workflow failed.\").slice(0, 500)};\nmsg.url = gateway + \"/internal/failure\";\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": []
+  },
+  {
+    "id": "ioe-failure",
+    "z": "ioe-workflow",
+    "type": "http request",
+    "name": "Record error / release pending device",
+    "x": 970,
+    "y": 620,
+    "wires": [
+      [
+        "ioe-failure-finish"
+      ]
+    ],
+    "method": "POST",
+    "ret": "obj",
+    "url": "",
+    "paytoqs": "ignore",
+    "persist": false,
+    "senderr": true,
+    "headers": []
+  },
+  {
+    "id": "ioe-failure-finish",
+    "z": "ioe-workflow",
+    "type": "function",
+    "name": "Return workflow error",
+    "x": 1240,
+    "y": 620,
+    "wires": [
+      [
+        "ioe-response"
+      ],
+      [
+        "ioe-debug"
+      ]
+    ],
+    "func": "msg.statusCode = 200;\nmsg.headers = {\"Content-Type\": \"application/json\"};\nreturn msg.res ? [msg, msg] : [null, msg];",
+    "outputs": 2,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": []
+  },
+  {
+    "id": "ioe-test-0",
+    "z": "ioe-workflow",
+    "type": "inject",
+    "name": "Test open palm -> lights on",
+    "x": 280,
+    "y": 780,
+    "wires": [
+      [
+        "ioe-prepare"
+      ]
+    ],
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "payload": "{\"source\": \"gesture\", \"text\": \"Open_Palm\"}",
+    "payloadType": "json",
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1
+  },
+  {
+    "id": "ioe-test-1",
+    "z": "ioe-workflow",
+    "type": "inject",
+    "name": "Test closed fist -> lights off",
+    "x": 680,
+    "y": 780,
+    "wires": [
+      [
+        "ioe-prepare"
+      ]
+    ],
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "payload": "{\"source\": \"gesture\", \"text\": \"Closed_Fist\"}",
+    "payloadType": "json",
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1
+  },
+  {
+    "id": "ioe-test-2",
+    "z": "ioe-workflow",
+    "type": "inject",
+    "name": "Test speech wording through LLM",
+    "x": 1080,
+    "y": 780,
+    "wires": [
+      [
+        "ioe-prepare"
+      ]
+    ],
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "payload": "{\"source\": \"text\", \"text\": \"Could you switch on the lamp, please?\"}",
+    "payloadType": "json",
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1
+  },
+  {
+    "id": "ioe-comment",
+    "z": "ioe-workflow",
+    "type": "comment",
+    "name": "Select success / warning / error / timeout for each MCU in the web app.",
+    "x": 460,
+    "y": 720,
+    "wires": []
+  },
+  {
+    "id": "ioe-health-in",
+    "z": "ioe-workflow",
+    "type": "http in",
+    "name": "Service health",
+    "x": 200,
+    "y": 880,
+    "wires": [
+      [
+        "ioe-health-value"
+      ]
+    ],
+    "url": "/ioe/health",
+    "method": "get",
+    "upload": false
+  },
+  {
+    "id": "ioe-health-value",
+    "z": "ioe-workflow",
+    "type": "function",
+    "name": "Report workflow revision",
+    "x": 490,
+    "y": 880,
+    "wires": [
+      [
+        "ioe-health-response"
+      ]
+    ],
+    "func": "msg.payload = {service: \"ioe-workflow\", revision: 1};\nmsg.headers = {\"Content-Type\": \"application/json\"};\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": []
+  },
+  {
+    "id": "ioe-health-response",
+    "z": "ioe-workflow",
+    "type": "http response",
+    "name": "Health response",
+    "x": 780,
+    "y": 880,
+    "wires": [],
+    "statusCode": "200",
+    "headers": {}
+  }
+]

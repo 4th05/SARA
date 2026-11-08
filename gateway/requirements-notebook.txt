@@ -1,0 +1,4 @@
+-r requirements.txt
+ipykernel==7.4.0
+mediapipe==1.2.0
+faster-whisper==1.2.1

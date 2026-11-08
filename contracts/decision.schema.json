@@ -1,0 +1,55 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "kind": {
+      "enum": [
+        "command",
+        "clarify",
+        "status",
+        "reply"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "device": {
+      "anyOf": [
+        {
+          "enum": [
+            "lights",
+            "pump"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Device"
+    },
+    "value": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Value"
+    },
+    "reply": {
+      "maxLength": 500,
+      "minLength": 1,
+      "title": "Reply",
+      "type": "string"
+    }
+  },
+  "required": [
+    "kind",
+    "device",
+    "value",
+    "reply"
+  ],
+  "title": "Decision",
+  "type": "object"
+}

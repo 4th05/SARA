@@ -1,52 +1,29 @@
-# Node-RED workspace
+# IoE workflow
 
-This workspace installs Node-RED 5.0.9 using Node.js 24. The editor runs at
-http://localhost:1880/ on the gateway computer.
-
-## Start on this Mac
-
-From the IoE project folder:
+Run the complete application from the repository root with:
 
 ```sh
-./tools/start_node_red.sh
+./tools/start_system.sh
 ```
 
-Keep that terminal running. Ctrl+C stops Node-RED. The launcher selects the
-Homebrew Node.js 24 installation on this Mac.
+Open http://localhost:1880/ to see the **IoE workflow** graph. The web monitor at
+http://localhost:8080/?view=monitor contains pairing, simulator settings, typed
+requests, recognition controls, device state, and the event log.
 
-## Install on another computer or Raspberry Pi
+The graph receives events, invokes Python interpretation, routes commands or
+clarification, registers pending state, calls the mock adapter, records feedback,
+and responds. Catch nodes route failures to Python state. A Python watchdog
+handles missing feedback. Inject buttons provide reference gesture and wording
+tests; choose the simulator outcomes in the monitor before using them.
 
-Install Node.js 24 and npm, then clone this repository. From the IoE folder:
+`flows.json`, `settings.js`, `package.json`, and its lockfile are versioned. The
+Node-RED user directory is this folder, so palette dependencies are recorded here.
+Generated `.config*`, credential files, installed packages, and context data are
+ignored. Use ordinary Git for the complete repository.
 
-```sh
-npm --prefix orchestration/node-red ci
-./tools/start_node_red.sh
-```
+Service HTTP endpoints require the private token from `.local/workflow-token`.
+The editor is bound to loopback on port 1880. Python state stays authoritative.
+For a standalone editor, use `./tools/start_node_red.sh`; running the workflow
+also requires the gateway, so the full launcher is the normal entry point.
 
-`npm ci` restores the dependency versions recorded in `package-lock.json`.
-It installs packages for the target computer, including Linux ARM64 on the Pi.
-On the Pi itself, open http://localhost:1880/ in Firefox. The editor is bound to
-the gateway's loopback address. Remote editing can use an SSH tunnel:
-
-```sh
-ssh -L 1880:127.0.0.1:1880 USER@PI_ADDRESS
-```
-
-Then open http://localhost:1880/ on the computer running the SSH client.
-
-## Files saved with Git
-
-- `flows.json` contains the workflow saved by the editor's Deploy button.
-- `settings.js` contains shared runtime settings.
-- `package.json` and `package-lock.json` record Node-RED and its dependencies.
-- `.nvmrc` records the Node.js major version.
-
-The Node-RED user directory is this workspace, so dependencies added through the
-palette are recorded in its tracked `package.json` and lockfile. Installed
-`node_modules/`, credential files, `.config*` runtime files, and persisted context
-are ignored by Git. The complete IoE repository uses ordinary Git for version control.
-The editor starts with an empty workspace for the implementation stage.
-
-References:
-- https://nodered.org/docs/getting-started/local
-- https://nodered.org/docs/faq/node-versions
+Installation, phone HTTPS, model setup, and Pi instructions are in the root README.

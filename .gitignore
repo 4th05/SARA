@@ -9,3 +9,6 @@ orchestration/node-red/flows_cred.json
 orchestration/node-red/.flows*.backup
 orchestration/node-red/.config*
 orchestration/node-red/context/
+.DS_Store
+*.egg-info/
+.pytest_cache/

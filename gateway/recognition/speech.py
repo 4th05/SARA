@@ -1,0 +1,60 @@
+"""Bounded utterance collection and local Whisper speech transcription."""
+from io import BytesIO
+import wave
+
+from gateway.config import LOCAL
+
+
+class SpeechBuffer:
+    def __init__(self, threshold=0.012):
+        self.threshold = threshold
+        self.reset()
+
+    def reset(self):
+        self.pcm = bytearray()
+        self.voiced = 0
+        self.quiet = 0
+        self.preroll = b""
+
+    def feed(self, pcm, level):
+        samples = len(pcm) // 2
+        if not self.pcm and level < self.threshold:
+            self.preroll = (self.preroll + pcm)[-6400:]
+            return None
+        if not self.pcm:
+            self.pcm.extend(self.preroll)
+        self.pcm.extend(pcm)
+        if level >= self.threshold:
+            self.voiced += samples
+            self.quiet = 0
+        else:
+            self.quiet += samples
+        finished = self.quiet >= 9600 or len(self.pcm) >= 16000 * 2 * 6
+        if not finished:
+            return None
+        audio = bytes(self.pcm) if self.voiced >= 4800 else None
+        self.reset()
+        return audio
+
+
+class SpeechRecognizer:
+    def __init__(self, model_name):
+        self.model_name = model_name
+        self.model = None
+
+    def transcribe(self, pcm):
+        from faster_whisper import WhisperModel
+
+        if self.model is None:
+            self.model = WhisperModel(self.model_name, device="cpu", compute_type="int8",
+                                      cpu_threads=2, download_root=str(LOCAL / "models"))
+        wav_bytes = BytesIO()
+        with wave.open(wav_bytes, "wb") as wav:
+            wav.setnchannels(1)
+            wav.setsampwidth(2)
+            wav.setframerate(16000)
+            wav.writeframes(pcm)
+        wav_bytes.seek(0)
+        segments, _ = self.model.transcribe(wav_bytes, beam_size=1, vad_filter=True,
+                                            condition_on_previous_text=False)
+        return " ".join(segment.text.strip() for segment in segments)
