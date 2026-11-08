@@ -7,6 +7,9 @@
     },
     "device": {
       "enum": [
+        "bathroom",
+        "kitchen",
+        "bedroom",
         "lights",
         "pump"
       ],

@@ -1,4 +1,32 @@
 {
+  "$defs": {
+    "Action": {
+      "additionalProperties": false,
+      "properties": {
+        "device": {
+          "enum": [
+            "bathroom",
+            "kitchen",
+            "bedroom",
+            "lights",
+            "pump"
+          ],
+          "title": "Device",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "device",
+        "value"
+      ],
+      "title": "Action",
+      "type": "object"
+    }
+  },
   "additionalProperties": false,
   "properties": {
     "kind": {
@@ -11,10 +39,36 @@
       "title": "Kind",
       "type": "string"
     },
+    "actions": {
+      "items": {
+        "$ref": "#/$defs/Action"
+      },
+      "maxItems": 4,
+      "title": "Actions",
+      "type": "array"
+    },
+    "reply": {
+      "maxLength": 500,
+      "minLength": 1,
+      "title": "Reply",
+      "type": "string"
+    },
+    "language": {
+      "default": "en",
+      "enum": [
+        "en",
+        "pt"
+      ],
+      "title": "Language",
+      "type": "string"
+    },
     "device": {
       "anyOf": [
         {
           "enum": [
+            "bathroom",
+            "kitchen",
+            "bedroom",
             "lights",
             "pump"
           ],
@@ -24,6 +78,7 @@
           "type": "null"
         }
       ],
+      "default": null,
       "title": "Device"
     },
     "value": {
@@ -35,19 +90,12 @@
           "type": "null"
         }
       ],
+      "default": null,
       "title": "Value"
-    },
-    "reply": {
-      "maxLength": 500,
-      "minLength": 1,
-      "title": "Reply",
-      "type": "string"
     }
   },
   "required": [
     "kind",
-    "device",
-    "value",
     "reply"
   ],
   "title": "Decision",

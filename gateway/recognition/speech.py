@@ -41,6 +41,7 @@ class SpeechRecognizer:
     def __init__(self, model_name):
         self.model_name = model_name
         self.model = None
+        self.language = None
 
     def transcribe(self, pcm):
         from faster_whisper import WhisperModel
@@ -55,6 +56,7 @@ class SpeechRecognizer:
             wav.setframerate(16000)
             wav.writeframes(pcm)
         wav_bytes.seek(0)
-        segments, _ = self.model.transcribe(wav_bytes, beam_size=1, vad_filter=True,
-                                            condition_on_previous_text=False)
+        segments, info = self.model.transcribe(wav_bytes, beam_size=1, vad_filter=True,
+                                               condition_on_previous_text=False)
+        self.language = info.language if info.language in ("en", "pt") else None
         return " ".join(segment.text.strip() for segment in segments)

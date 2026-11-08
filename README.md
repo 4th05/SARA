@@ -4,7 +4,8 @@ A phone browser sends camera/microphone media to a local Python gateway. Whisper
 transcribes speech, LangChain/Ollama interprets requests, and Node-RED coordinates
 commands and feedback. One Python `SystemState` owns device state.
 
-The current light and water-pump controllers are **simulated MCUs**. Their
+Only the Arduino controllers are simulated. The light controller has separate
+**bathroom, kitchen, and bedroom** outputs. The existing water-pump output is also available. Their
 success, warning, error, and timeout behavior is selectable in the web interface.
 
 ## Start on this Mac
@@ -23,7 +24,8 @@ prints a fresh six-digit pairing code plus the phone address.
 - Phone on this Wi-Fi: https://192.168.1.163:8443/
 
 Enter the code in the page and select **Connect controls**. On the phone select
-camera, microphone, or both and **Start sharing**. Microphone commands are
+microphone (selected by default) and **Start sharing**. Leave **Play voice replies**
+enabled on the phone. Select **Test voice** to verify its speaker. Microphone commands are
 interpreted automatically after a short pause in speech. The audio meter, heard
 transcript, processing status, event list, and device cards show each stage.
 Ctrl+C closes the gateway and services started by the launcher.
@@ -32,8 +34,14 @@ Ctrl+C closes the gateway and services started by the launcher.
 
 1. Connect the controls using the pairing code.
 2. Select the desired feedback for the light or pump.
-3. Type a request such as “Could you switch on the lamp?” and select **Send through LLM**.
-4. Watch pending state, device feedback, and the confirmed result.
+3. Speak through the connected phone, or type a request such as “Turn on the kitchen light” and select **Send through LLM**.
+4. Hear the acknowledgement and controller result, and watch each room’s confirmed state.
+
+Try “Turn all lights on”, “Turn off the bathroom and bedroom lights”, or
+“Turn on the kitchen and bathroom, and turn off the bedroom”. Portuguese requests
+such as “Ligue a cozinha e desligue o quarto” are also supported. Different rooms
+can return different outcomes in one request. A partial result reports each room
+without claiming that the entire request succeeded.
 
 | Simulator outcome | Behavior |
 |---|---|
@@ -45,12 +53,23 @@ Ctrl+C closes the gateway and services started by the launcher.
 “Turn it off” without a clear target/context asks for clarification. Follow-up
 questions share context within a browser or phone-media session. The state log
 provides actual outcomes to subsequent LLM requests, including reported errors.
-**Read replies aloud** uses voices available in that browser and pauses that
-page's microphone transmission while speaking.
+**Play voice replies** queues the acknowledgement before the final result. The
+phone plays real WAV audio from the gateway, with a visible player and replay
+controls. Its microphone transmission pauses during playback. Automatic speech
+is enabled on the phone and disabled on the monitor to avoid duplicate speakers.
+If the browser blocks automatic playback, use the audio player’s Play button.
+Keep the phone page in the foreground during this browser prototype.
+
+Speech output uses local Piper neural voices: `en_US-lessac-medium` for English
+and `pt_BR-faber-medium` for Portuguese. Setup downloads approximately 63 MB per
+voice. Models stay loaded for quick repeated replies. No paid API is required. Acknowledgements and controller outcomes use concise, factual phrases in
+English or Portuguese. Ollama generates interpretation, clarification, and status
+responses, which are also converted to audio. No second LLM call delays a device
+confirmation.
 
 **Send test gesture** injects a recognition event through the same workflow.
 Optional live camera recognition uses MediaPipe. Enable **Detect camera gestures**
-for the reference mapping of open palm to light on and closed fist to light off.
+for the reference mapping of open palm to all three lights on and closed fist to all three lights off.
 The gesture model requires three stable detections at >= 80% confidence and
 suppresses repeated events from a held gesture. The ML teammate can replace this
 adapter and agree the intended gesture mappings.
@@ -62,10 +81,11 @@ Open the **IoE workflow** tab in Node-RED. Its saved graph contains:
 1. Recognition/text input.
 2. Python LangChain/Ollama interpretation.
 3. A branch between a command and clarification/conversation.
-4. Registration of a pending command in Python state.
-5. The selected simulated MCU response.
-6. Matching feedback and confirmed-state update.
-7. A response to the interface and a Debug output.
+4. Atomic registration of the requested rooms in Python state and a spoken acknowledgement.
+5. Native Split/Join nodes dispatching one command per room.
+6. The Arduino simulator applying virtual output values and returning selected feedback.
+7. Each room’s matching feedback updating its confirmed state immediately.
+8. A combined spoken result, a response to the interface, and a Debug output.
 
 The Catch path records workflow errors. A Python watchdog expires pending commands
 if feedback never arrives. Duplicate request IDs reuse their existing result;
@@ -79,8 +99,9 @@ Tracked defaults live in `config/settings.json`. Optional machine-specific
 values go in `.local/settings.json`. Models, credentials, certificates, and
 runtime caches live under ignored local paths.
 
-- LLM: `qwen3.5:0.8b-q8_0`, with thinking disabled and bounded context/output.
-- Speech: faster-whisper `tiny`, CPU int8.
+- LLM: `qwen3.5:2b-q4_K_M`, with thinking disabled and bounded context/output.
+- Speech recognition: faster-whisper `tiny`, CPU int8.
+- Speech output: Piper 1.8.0 neural voices, replayable WAV audio.
 - Orchestration: Node-RED 5.0.9, Node.js 24.
 - State/device/message handling: Python 3.12 and Pydantic.
 - Optional reference gestures: MediaPipe 1.2.0.
@@ -103,7 +124,7 @@ official installer. Clone the repository, then from its root:
 ```
 
 This installs pinned Python and Node-RED dependencies and downloads local speech
-and LLM models. To include reference camera gesture detection:
+recognition, neural voice, and LLM models. To include reference camera gesture detection:
 
 ```sh
 ./tools/setup.sh --with-gesture
@@ -139,7 +160,8 @@ publicly trusted HTTPS name. Both devices need a network permitting local traffi
 ## Team boundaries
 
 - `gateway/recognition/` holds runtime inference adapters; `notebooks/` contains experiments.
-- `gateway/devices/mock.py` is the current device adapter. Firmware belongs in `firmware/`.
+- `gateway/devices/mock.py` is the Arduino simulator. Its `pins` dictionary holds virtual output levels; only this adapter is simulated. Firmware belongs in `firmware/`.
+- `gateway/speech_output.py` creates local speech audio and `gateway/responses.py` formats truthful acknowledgements/results.
 - `gateway/state.py` owns state; `gateway/runtime.py` binds service workers and APIs.
 - `orchestration/node-red/flows.json` defines the application workflow.
 - `contracts/` documents recognition, command, and feedback messages.
@@ -157,7 +179,7 @@ were archived under `.local/archive/before-workflow-*` for recovery.
 
 The tests negotiate actual synthetic WebRTC media and run the saved Node-RED
 workflow in an isolated process. They cover feedback scenarios, timeouts,
-clarification, internal API authentication, duplicate requests, state integrity,
+multi-room partial results, atomic reservations, clarification, authenticated speech playback, duplicate requests, state integrity,
 and the audio-worker connection using deterministic test recognition. They require
 installed Node-RED dependencies and use synthetic input rather than a microphone.
 Live model and generated-speech-through-WebRTC checks are performed separately.
@@ -168,3 +190,8 @@ References:
 - [Ollama structured output](https://docs.ollama.com/capabilities/structured-outputs)
 - [Model tags](https://ollama.com/library/qwen3.5/tags)
 - [Homebrew MLX structured-output issue](https://github.com/ollama/ollama/issues/18567)
+
+- [Piper neural speech engine and Python API](https://github.com/OHF-Voice/piper1-gpl/blob/main/docs/API_PYTHON.md)
+- [English voice model card](https://huggingface.co/rhasspy/piper-voices/blob/main/en/en_US/lessac/medium/MODEL_CARD)
+- [Portuguese voice model card](https://huggingface.co/rhasspy/piper-voices/blob/main/pt/pt_BR/faber/medium/MODEL_CARD)
+- [Browser voice availability](https://developer.mozilla.org/en-US/docs/Web/API/SpeechSynthesis/getVoices)

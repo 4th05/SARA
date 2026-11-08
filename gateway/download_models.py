@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import time
 from urllib.error import URLError
 from urllib.request import urlopen
@@ -48,6 +49,10 @@ def main():
 
         WhisperModel(settings.speech_model, device="cpu", compute_type="int8",
                      cpu_threads=2, download_root=str(LOCAL / "models"))
+        from gateway.speech_output import VOICE_DIRECTORY, VOICE_NAMES
+
+        subprocess.run([sys.executable, "-m", "piper.download_voices", "--data-dir", str(VOICE_DIRECTORY),
+                        *VOICE_NAMES.values()], check=True)
         if args.with_gesture:
             target = LOCAL / "models/gesture_recognizer.task"
             if not target.exists():

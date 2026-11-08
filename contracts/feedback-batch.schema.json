@@ -1,0 +1,91 @@
+{
+  "$defs": {
+    "Feedback": {
+      "additionalProperties": false,
+      "properties": {
+        "command_id": {
+          "title": "Command Id",
+          "type": "string"
+        },
+        "device": {
+          "enum": [
+            "bathroom",
+            "kitchen",
+            "bedroom",
+            "lights",
+            "pump"
+          ],
+          "title": "Device",
+          "type": "string"
+        },
+        "outcome": {
+          "enum": [
+            "success",
+            "warning",
+            "error",
+            "timeout"
+          ],
+          "title": "Outcome",
+          "type": "string"
+        },
+        "reported_value": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reported Value"
+        },
+        "code": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "command_id",
+        "device",
+        "outcome",
+        "reported_value",
+        "code",
+        "message"
+      ],
+      "title": "Feedback",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "request_id": {
+      "maxLength": 80,
+      "minLength": 1,
+      "title": "Request Id",
+      "type": "string"
+    },
+    "feedback": {
+      "items": {
+        "$ref": "#/$defs/Feedback"
+      },
+      "maxItems": 4,
+      "minItems": 1,
+      "title": "Feedback",
+      "type": "array"
+    }
+  },
+  "required": [
+    "request_id",
+    "feedback"
+  ],
+  "title": "FeedbackBatch",
+  "type": "object"
+}

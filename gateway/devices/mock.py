@@ -1,18 +1,22 @@
 """Selectable MCU behavior with the same command/feedback boundary as future BLE."""
 import asyncio
 
-from gateway.contracts import DeviceCommand, Feedback, MockSetting
+from gateway.contracts import DEVICES, ROOMS, DeviceCommand, Feedback, MockSetting
 
 
 class MockDevices:
     def __init__(self, timeout_seconds):
         self.timeout_seconds = timeout_seconds
-        self.settings = {name: MockSetting(device=name, outcome="success") for name in ("lights", "pump")}
+        self.settings = {name: MockSetting(device=name, outcome="success") for name in (*DEVICES, "lights")}
+        self.pins = {name: False for name in DEVICES}
         self.executions = {}
         self.results = {}
 
     def configure(self, setting):
         self.settings[setting.device] = setting
+        if setting.device == "lights":
+            for room in ROOMS:
+                self.settings[room] = setting.model_copy(update={"device": room})
 
     def snapshot(self):
         return {name: value.model_dump() for name, value in self.settings.items()}
@@ -33,6 +37,10 @@ class MockDevices:
             delay = self.timeout_seconds + 0.5 if scenario.outcome == "timeout" else scenario.delay_ms / 1000
             await asyncio.sleep(delay)
             applied = scenario.outcome in ("success", "warning")
+            if applied:
+                targets = ROOMS if command.device == "lights" else (command.device,)
+                for device in targets:
+                    self.pins[device] = command.value
             messages = {
                 "success": f"Simulated {command.device} confirmed {'on' if command.value else 'off'}.",
                 "warning": f"Simulated {command.device} applied the command with a supply warning.",

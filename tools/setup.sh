@@ -3,7 +3,7 @@ set -eu
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$project_dir"
 if command -v brew >/dev/null 2>&1; then
-    node_prefix=$(brew --prefix node@24)
+    node_prefix=$(brew --prefix node@24 2>/dev/null || true)
     if [ -x "$node_prefix/bin/node" ]; then
         PATH="$node_prefix/bin:$PATH"
         export PATH

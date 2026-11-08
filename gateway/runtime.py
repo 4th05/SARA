@@ -6,13 +6,14 @@ import uuid
 
 from aiohttp import ClientError, ClientSession, ClientTimeout, web
 
-from gateway.contracts import (Decision, DeviceCommand, Feedback, InputEvent,
-                               MockSetting, RecognitionSetting)
+from gateway.contracts import (Decision, DeviceCommand, Feedback,
+                               FeedbackBatch, InputEvent, MockSetting, RecognitionSetting)
 from gateway.devices.mock import MockDevices
 from gateway.recognition.gesture import GestureRecognizer
 from gateway.recognition.intent import IntentService
 from gateway.recognition.speech import SpeechBuffer, SpeechRecognizer
 from gateway.state import SystemState
+from gateway.speech_output import SpeechOutput
 
 
 class SystemRuntime:
@@ -27,6 +28,7 @@ class SystemRuntime:
         self.speech_buffer = SpeechBuffer(settings.speech_threshold)
         self.speech = SpeechRecognizer(settings.speech_model)
         self.gestures = GestureRecognizer()
+        self.speech_output = SpeechOutput()
         self.audio_queue = asyncio.Queue(maxsize=2)
         self.video_queue = asyncio.Queue(maxsize=1)
         self.requests = OrderedDict()
@@ -45,7 +47,7 @@ class SystemRuntime:
         self.receiver.on_reset = self.speech_buffer.reset
         self.tasks = [asyncio.create_task(worker()) for worker in
                       (self.watchdog, self.voice_worker, self.gesture_worker, self.health_worker)]
-        self.state.event("ready", "Workflow ready with simulated light and pump controllers.")
+        self.state.event("ready", "Voice workflow ready. Bathroom, kitchen, and bedroom controllers are simulated.")
 
     async def close(self):
         self.receiver.on_audio = self.receiver.on_video = self.receiver.on_reset = None
@@ -63,7 +65,9 @@ class SystemRuntime:
         return {**self.state.snapshot(), "mocks": self.devices.snapshot(),
                 "recognition": self.recognition.model_dump(), "health": self.health.copy(),
                 "voice_status": self.voice_status, "last_transcript": self.last_transcript,
-                "last_gesture": self.last_gesture}
+                "last_gesture": self.last_gesture,
+                "speech_output": {"available": self.speech_output.available,
+                                  "backend": self.speech_output.backend}}
 
     async def submit(self, event):
         previous = self.requests.get(event.request_id)
@@ -95,8 +99,16 @@ class SystemRuntime:
                     raise RuntimeError("Unexpected response from the Node-RED workflow.")
                 return result
         except (ClientError, TimeoutError, OSError, RuntimeError, ValueError) as error:
-            self.state.fail(event.request_id, f"Workflow connection failed: {error}")
-            return {"request_id": event.request_id, "status": "error", "reply": str(error)}
+            return self.workflow_failure(event.request_id, f"Workflow connection failed: {error}")
+
+    def workflow_failure(self, request_id, message):
+        group = self.state.groups.get(request_id)
+        if group:
+            for identifier in group["command_ids"]:
+                self.state.fail(identifier, message)
+            return self.state.complete_batch(request_id)
+        self.state.event("error", message, request_id=request_id, speak=True, language="en")
+        return {"request_id": request_id, "status": "error", "reply": message}
 
     def feed_audio(self, pcm, level):
         if not self.recognition.voice_enabled:
@@ -123,17 +135,17 @@ class SystemRuntime:
                     continue
                 self.voice_status = "Transcribing speech locally…"
                 text = await asyncio.to_thread(self.speech.transcribe, pcm)
-                if session != self.receiver.session:
+                if session != self.receiver.session or not self.recognition.voice_enabled:
                     continue
                 self.last_transcript = text
                 if text:
                     self.voice_status = "Interpreting speech through Node-RED and Ollama…"
                     await self.submit(InputEvent(request_id=str(uuid.uuid4()), conversation_id=session or "voice",
-                                                 source="voice", text=text))
+                                                 source="voice", text=text, language=self.speech.language))
                 self.voice_status = "Listening for the next command."
             except Exception as error:
                 self.voice_status = "Speech processing failed. Check the event log."
-                self.state.event("error", f"Speech processing failed: {error}")
+                self.state.event("error", f"Speech processing failed: {error}", speak=True, language="en")
             finally:
                 self.audio_queue.task_done()
 
@@ -204,6 +216,23 @@ class SystemRuntime:
             self.speech_buffer.reset()
             return web.json_response(self.recognition.model_dump())
 
+        async def speech_audio(request):
+            sequence = int(request.match_info["sequence"])
+            event = next((event for event in self.state.events
+                          if event["sequence"] == sequence and event.get("speak")), None)
+            if event is None:
+                raise web.HTTPNotFound(text="This spoken reply is no longer in the recent event history.")
+            try:
+                audio = await self.speech_output.synthesize(event["message"], event.get("language", "en"))
+            except (OSError, RuntimeError, TimeoutError) as error:
+                raise web.HTTPServiceUnavailable(text=str(error))
+            return web.Response(body=audio, content_type="audio/wav")
+
+        async def test_speech(request):
+            event = self.state.event("reply", "Voice feedback is ready. You can now speak a command.",
+                                     speak=True, language="en")
+            return web.json_response(event)
+
         async def interpret(request):
             event = InputEvent.model_validate(await request.json())
             try:
@@ -237,7 +266,31 @@ class SystemRuntime:
             # The watchdog may already have recorded a timeout before late feedback.
             result = command.get("feedback", value.model_dump())
             return web.json_response({"request_id": value.command_id, "status": command["status"],
-                                      "reply": result["message"], "device": value.device})
+                                      "reply": result["message"], "device": value.device, "feedback": result})
+
+        async def begin_batch(request):
+            params = await request.json()
+            event = InputEvent.model_validate(params["event"])
+            decision = Decision.model_validate(params["decision"])
+            if decision.kind != "command":
+                raise ValueError("A command decision is required.")
+            return web.json_response(self.state.begin_batch(event, decision).model_dump())
+
+        async def feedback_batch(request):
+            batch = FeedbackBatch.model_validate(await request.json())
+            registered = self.state.command_batch(batch.request_id)
+            expected = {command.command_id: command for command in registered.commands}
+            if len(batch.feedback) != len(expected) or {value.command_id for value in batch.feedback} != set(expected):
+                raise ValueError("Feedback must match every command in the registered batch.")
+            for value in batch.feedback:
+                command = expected[value.command_id]
+                if value.device != command.device:
+                    raise ValueError("Feedback device does not match its command.")
+                if value.outcome == "success" and value.reported_value != command.value:
+                    raise ValueError("Successful feedback must confirm the requested value.")
+            for value in batch.feedback:
+                self.state.feedback(value)
+            return web.json_response(self.state.complete_batch(batch.request_id))
 
         async def reply(request):
             params = await request.json()
@@ -245,7 +298,8 @@ class SystemRuntime:
             decision = Decision.model_validate(params["decision"])
             if decision.kind == "command":
                 raise ValueError("Commands must pass through execution and feedback.")
-            self.state.event(decision.kind, decision.reply, request_id=event.request_id)
+            self.state.event(decision.kind, decision.reply, request_id=event.request_id,
+                             speak=True, language=decision.language)
             return web.json_response({"request_id": event.request_id, "status": decision.kind,
                                       "reply": decision.reply})
 
@@ -253,19 +307,19 @@ class SystemRuntime:
             params = await request.json()
             command_id = str(params.get("request_id", "unknown"))[:80]
             message = str(params.get("message", "Workflow failed."))[:500]
-            command = self.state.fail(command_id, message)
-            result = {"request_id": command_id, "status": "error", "reply": message}
-            if command and command["status"] != "pending":
-                result.update(status=command["status"], reply=command["feedback"]["message"])
-            return web.json_response(result)
+            return web.json_response(self.workflow_failure(command_id, message))
 
         app.router.add_get("/api/system", system)
         app.router.add_post("/api/input", submit)
         app.router.add_post("/api/mock", mock_setting)
         app.router.add_post("/api/recognition", recognition_setting)
+        app.router.add_get("/api/speech/{sequence:\\d+}.wav", speech_audio)
+        app.router.add_post("/api/speech/test", test_speech)
         app.router.add_post("/internal/interpret", interpret)
         app.router.add_post("/internal/commands", begin)
         app.router.add_post("/internal/mock/execute", execute)
         app.router.add_post("/internal/feedback", feedback)
+        app.router.add_post("/internal/commands/batch", begin_batch)
+        app.router.add_post("/internal/feedback/batch", feedback_batch)
         app.router.add_post("/internal/reply", reply)
         app.router.add_post("/internal/failure", failure)

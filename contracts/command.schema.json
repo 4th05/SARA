@@ -2,13 +2,16 @@
   "additionalProperties": false,
   "properties": {
     "command_id": {
-      "maxLength": 80,
+      "maxLength": 120,
       "minLength": 1,
       "title": "Command Id",
       "type": "string"
     },
     "device": {
       "enum": [
+        "bathroom",
+        "kitchen",
+        "bedroom",
         "lights",
         "pump"
       ],

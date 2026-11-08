@@ -4,7 +4,7 @@
     "type": "tab",
     "label": "IoE workflow",
     "disabled": false,
-    "info": "Recognition -> validated intent -> pending state -> simulated MCU -> feedback -> confirmed state. Python owns state. Service requests use a local token."
+    "info": "Real voice/text -> Ollama action list -> pending rooms + spoken acknowledgement -> Arduino simulator -> per-room feedback -> confirmed state + spoken result. Only the device adapter is simulated."
   },
   {
     "id": "ioe-input",
@@ -87,7 +87,7 @@
     "id": "ioe-pending-prepare",
     "z": "ioe-workflow",
     "type": "function",
-    "name": "Register command in Python State",
+    "name": "Register requested rooms in Python State",
     "x": 280,
     "y": 240,
     "wires": [
@@ -95,7 +95,7 @@
         "ioe-pending"
       ]
     ],
-    "func": "msg.headers = {\n    Authorization: \"Bearer \" + env.get(\"IOE_INTERNAL_TOKEN\"),\n    \"Content-Type\": \"application/json\"\n};\nmsg.requestTimeout = 45000;\nconst gateway = env.get(\"IOE_GATEWAY_URL\") || \"http://127.0.0.1:8080\";\n\nmsg.payload = {event: msg.input, decision: msg.decision};\nmsg.url = gateway + \"/internal/commands\";\nreturn msg;",
+    "func": "msg.headers = {\n    Authorization: \"Bearer \" + env.get(\"IOE_INTERNAL_TOKEN\"),\n    \"Content-Type\": \"application/json\"\n};\nmsg.requestTimeout = 45000;\nconst gateway = env.get(\"IOE_GATEWAY_URL\") || \"http://127.0.0.1:8080\";\n\nmsg.payload = {event: msg.input, decision: msg.decision};\nmsg.url = gateway + \"/internal/commands/batch\";\nreturn msg;",
     "outputs": 1,
     "noerr": 0,
     "initialize": "",
@@ -111,7 +111,7 @@
     "y": 240,
     "wires": [
       [
-        "ioe-mock-prepare"
+        "ioe-expand-rooms"
       ]
     ],
     "method": "POST",
@@ -127,14 +127,14 @@
     "z": "ioe-workflow",
     "type": "function",
     "name": "Send command to device adapter",
-    "x": 880,
-    "y": 240,
+    "x": 460,
+    "y": 280,
     "wires": [
       [
         "ioe-mock"
       ]
     ],
-    "func": "if (msg.statusCode !== 200) {\n    const detail = typeof msg.payload === \"string\" ? msg.payload : JSON.stringify(msg.payload);\n    throw new Error(\"Gateway HTTP \" + msg.statusCode + \": \" + detail.slice(0, 400));\n}\n\nmsg.headers = {\n    Authorization: \"Bearer \" + env.get(\"IOE_INTERNAL_TOKEN\"),\n    \"Content-Type\": \"application/json\"\n};\nmsg.requestTimeout = 45000;\nconst gateway = env.get(\"IOE_GATEWAY_URL\") || \"http://127.0.0.1:8080\";\n\nmsg.command = msg.payload;\nmsg.url = gateway + \"/internal/mock/execute\";\nreturn msg;",
+    "func": "msg.headers = {\n    Authorization: \"Bearer \" + env.get(\"IOE_INTERNAL_TOKEN\"),\n    \"Content-Type\": \"application/json\"\n};\nmsg.requestTimeout = 45000;\nconst gateway = env.get(\"IOE_GATEWAY_URL\") || \"http://127.0.0.1:8080\";\n\nmsg.command = msg.payload;\nmsg.url = gateway + \"/internal/mock/execute\";\nreturn msg;",
     "outputs": 1,
     "noerr": 0,
     "initialize": "",
@@ -145,9 +145,9 @@
     "id": "ioe-mock",
     "z": "ioe-workflow",
     "type": "http request",
-    "name": "Simulated MCU: selected outcome",
-    "x": 1200,
-    "y": 240,
+    "name": "Arduino simulator: each room outcome",
+    "x": 780,
+    "y": 280,
     "wires": [
       [
         "ioe-feedback-prepare"
@@ -166,8 +166,8 @@
     "z": "ioe-workflow",
     "type": "function",
     "name": "Return device feedback",
-    "x": 280,
-    "y": 360,
+    "x": 1080,
+    "y": 280,
     "wires": [
       [
         "ioe-feedback"
@@ -185,11 +185,11 @@
     "z": "ioe-workflow",
     "type": "http request",
     "name": "Update confirmed Python State",
-    "x": 600,
+    "x": 170,
     "y": 360,
     "wires": [
       [
-        "ioe-finish"
+        "ioe-collect-room"
       ]
     ],
     "method": "POST",
@@ -206,7 +206,7 @@
     "type": "function",
     "name": "Record clarification / conversational reply",
     "x": 300,
-    "y": 480,
+    "y": 540,
     "wires": [
       [
         "ioe-reply"
@@ -225,7 +225,7 @@
     "type": "http request",
     "name": "Save assistant reply",
     "x": 620,
-    "y": 480,
+    "y": 540,
     "wires": [
       [
         "ioe-finish"
@@ -244,8 +244,8 @@
     "z": "ioe-workflow",
     "type": "function",
     "name": "Return result to caller",
-    "x": 920,
-    "y": 400,
+    "x": 460,
+    "y": 440,
     "wires": [
       [
         "ioe-response"
@@ -266,8 +266,8 @@
     "z": "ioe-workflow",
     "type": "http response",
     "name": "Reply to gateway",
-    "x": 1210,
-    "y": 380,
+    "x": 780,
+    "y": 420,
     "wires": [],
     "statusCode": "200",
     "headers": {}
@@ -277,8 +277,8 @@
     "z": "ioe-workflow",
     "type": "debug",
     "name": "Workflow results",
-    "x": 1210,
-    "y": 440,
+    "x": 780,
+    "y": 460,
     "wires": [],
     "active": true,
     "tosidebar": true,
@@ -292,7 +292,7 @@
     "type": "catch",
     "name": "Workflow errors and unavailable services",
     "x": 260,
-    "y": 620,
+    "y": 640,
     "wires": [
       [
         "ioe-failure-prepare"
@@ -310,7 +310,11 @@
       "ioe-feedback",
       "ioe-reply-prepare",
       "ioe-reply",
-      "ioe-finish"
+      "ioe-finish",
+      "ioe-expand-rooms",
+      "ioe-collect-room",
+      "ioe-summary-prepare",
+      "ioe-summary"
     ],
     "uncaught": false
   },
@@ -320,7 +324,7 @@
     "type": "function",
     "name": "Record workflow failure in Python State",
     "x": 620,
-    "y": 620,
+    "y": 640,
     "wires": [
       [
         "ioe-failure"
@@ -339,7 +343,7 @@
     "type": "http request",
     "name": "Record error / release pending device",
     "x": 970,
-    "y": 620,
+    "y": 640,
     "wires": [
       [
         "ioe-failure-finish"
@@ -359,7 +363,7 @@
     "type": "function",
     "name": "Return workflow error",
     "x": 1240,
-    "y": 620,
+    "y": 640,
     "wires": [
       [
         "ioe-response"
@@ -381,7 +385,7 @@
     "type": "inject",
     "name": "Test open palm -> lights on",
     "x": 280,
-    "y": 780,
+    "y": 760,
     "wires": [
       [
         "ioe-prepare"
@@ -405,7 +409,7 @@
     "type": "inject",
     "name": "Test closed fist -> lights off",
     "x": 680,
-    "y": 780,
+    "y": 800,
     "wires": [
       [
         "ioe-prepare"
@@ -429,7 +433,7 @@
     "type": "inject",
     "name": "Test speech wording through LLM",
     "x": 1080,
-    "y": 780,
+    "y": 840,
     "wires": [
       [
         "ioe-prepare"
@@ -440,7 +444,7 @@
         "p": "payload"
       }
     ],
-    "payload": "{\"source\": \"text\", \"text\": \"Could you switch on the lamp, please?\"}",
+    "payload": "{\"source\": \"text\", \"text\": \"Turn on the kitchen and bathroom lights and turn off the bedroom light.\"}",
     "payloadType": "json",
     "repeat": "",
     "crontab": "",
@@ -451,9 +455,9 @@
     "id": "ioe-comment",
     "z": "ioe-workflow",
     "type": "comment",
-    "name": "Select success / warning / error / timeout for each MCU in the web app.",
+    "name": "Use the phone microphone for real input. Only the Arduino adapter is simulated. Select each room outcome in the app.",
     "x": 460,
-    "y": 720,
+    "y": 710,
     "wires": []
   },
   {
@@ -501,5 +505,126 @@
     "wires": [],
     "statusCode": "200",
     "headers": {}
+  },
+  {
+    "id": "ioe-expand-rooms",
+    "z": "ioe-workflow",
+    "type": "function",
+    "name": "Dispatch each requested room",
+    "func": "if (msg.statusCode !== 200) {\n    throw new Error(\"Gateway HTTP \" + msg.statusCode + \": \" + JSON.stringify(msg.payload).slice(0, 400));\n}\n\nmsg.batchRequestId = msg.payload.request_id;\nmsg.payload = msg.payload.commands;\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1080,
+    "y": 200,
+    "wires": [
+      [
+        "ioe-split-rooms"
+      ]
+    ]
+  },
+  {
+    "id": "ioe-split-rooms",
+    "z": "ioe-workflow",
+    "type": "split",
+    "name": "One command per room",
+    "splt": "\\n",
+    "spltType": "str",
+    "arraySplt": 1,
+    "arraySpltType": "len",
+    "stream": false,
+    "addname": "",
+    "property": "payload",
+    "x": 170,
+    "y": 280,
+    "wires": [
+      [
+        "ioe-mock-prepare"
+      ]
+    ]
+  },
+  {
+    "id": "ioe-collect-room",
+    "z": "ioe-workflow",
+    "type": "function",
+    "name": "Collect confirmed room feedback",
+    "func": "if (msg.statusCode !== 200) {\n    throw new Error(\"Gateway HTTP \" + msg.statusCode + \": \" + JSON.stringify(msg.payload).slice(0, 400));\n}\n\nmsg.payload = msg.payload.feedback;\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 460,
+    "y": 360,
+    "wires": [
+      [
+        "ioe-join-rooms"
+      ]
+    ]
+  },
+  {
+    "id": "ioe-join-rooms",
+    "z": "ioe-workflow",
+    "type": "join",
+    "name": "Wait for every room result",
+    "mode": "auto",
+    "build": "array",
+    "property": "payload",
+    "propertyType": "msg",
+    "key": "topic",
+    "joiner": "\\n",
+    "joinerType": "str",
+    "accumulate": false,
+    "timeout": "10",
+    "count": "",
+    "reduceRight": false,
+    "x": 780,
+    "y": 360,
+    "wires": [
+      [
+        "ioe-summary-prepare"
+      ]
+    ]
+  },
+  {
+    "id": "ioe-summary-prepare",
+    "z": "ioe-workflow",
+    "type": "function",
+    "name": "Summarize request and speak feedback",
+    "func": "\nmsg.headers = {Authorization: \"Bearer \" + env.get(\"IOE_INTERNAL_TOKEN\"), \"Content-Type\": \"application/json\"};\nmsg.requestTimeout = 45000;\nconst gateway = env.get(\"IOE_GATEWAY_URL\") || \"http://127.0.0.1:8080\";\nmsg.payload = {request_id: msg.batchRequestId, feedback: msg.payload};\nmsg.url = gateway + \"/internal/feedback/batch\";\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1080,
+    "y": 360,
+    "wires": [
+      [
+        "ioe-summary"
+      ]
+    ]
+  },
+  {
+    "id": "ioe-summary",
+    "z": "ioe-workflow",
+    "type": "http request",
+    "name": "Record spoken controller result",
+    "method": "POST",
+    "ret": "obj",
+    "url": "",
+    "paytoqs": "ignore",
+    "persist": false,
+    "senderr": true,
+    "headers": [],
+    "x": 170,
+    "y": 440,
+    "wires": [
+      [
+        "ioe-finish"
+      ]
+    ]
   }
 ]

@@ -1,0 +1,61 @@
+{
+  "$defs": {
+    "DeviceCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "command_id": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Command Id",
+          "type": "string"
+        },
+        "device": {
+          "enum": [
+            "bathroom",
+            "kitchen",
+            "bedroom",
+            "lights",
+            "pump"
+          ],
+          "title": "Device",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "command_id",
+        "device",
+        "value"
+      ],
+      "title": "DeviceCommand",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "request_id": {
+      "maxLength": 80,
+      "minLength": 1,
+      "title": "Request Id",
+      "type": "string"
+    },
+    "commands": {
+      "items": {
+        "$ref": "#/$defs/DeviceCommand"
+      },
+      "maxItems": 4,
+      "minItems": 1,
+      "title": "Commands",
+      "type": "array"
+    }
+  },
+  "required": [
+    "request_id",
+    "commands"
+  ],
+  "title": "CommandBatch",
+  "type": "object"
+}

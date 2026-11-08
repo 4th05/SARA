@@ -36,6 +36,22 @@
       "minimum": 0,
       "title": "Confidence",
       "type": "number"
+    },
+    "language": {
+      "anyOf": [
+        {
+          "enum": [
+            "en",
+            "pt"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Language"
     }
   },
   "required": [

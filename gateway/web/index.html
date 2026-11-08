@@ -27,6 +27,8 @@ meter{display:block;width:100%;height:22px;margin-top:12px;accent-color:#19735c}
 .system-log li{padding:6px 0;line-height:1.45}.system-log .error,.system-log .timeout{color:#a4262c}
 .system-log .warning{color:#805b0c}textarea{width:100%;font:inherit;border:1px solid #a5b9b8;border-radius:10px;padding:12px}
 #assistant-reply{padding:14px;background:#edf5f1;border-radius:10px;white-space:pre-wrap}
+.light-state{font-size:22px;font-weight:700}.device-card.on{background:#fff8db;border-color:#d3ae3d}
+audio{width:100%;margin-top:12px}.speech-panel{border:1px solid #c8ded4;border-radius:12px;padding:16px;margin-top:20px}
 </style></head><body><main>
 <header><div class="brand">Assistive IoE</div><span id="state" class="pill">Ready</span></header>
 <nav aria-label="Connection mode"><a href="/">Phone sender</a><a href="/?view=monitor">Gateway monitor</a></nav>
@@ -37,8 +39,8 @@ meter{display:block;width:100%;height:22px;margin-top:12px;accent-color:#19735c}
 <input id="code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="off" spellcheck="false" placeholder="000000" aria-describedby="code-help">
 <p id="code-help" class="note">Shown in the gateway terminal.</p>
 <div id="sender-options">
-<label class="check"><input id="video" type="checkbox" checked>Share camera</label>
-<label class="check"><input id="audio" type="checkbox">Share microphone</label>
+<label class="check"><input id="video" type="checkbox">Share camera</label>
+<label class="check"><input id="audio" type="checkbox" checked>Share microphone</label>
 <div id="camera-options"><label for="camera">Camera</label><select id="camera"><option value="user">Front camera</option><option value="environment">Rear camera</option></select></div>
 </div>
 <div class="buttons"><button id="start">Start sharing</button><button id="stop" class="secondary" disabled>Stop sharing</button></div>
@@ -52,32 +54,32 @@ meter{display:block;width:100%;height:22px;margin-top:12px;accent-color:#19735c}
 </div>
 <p id="metrics" class="note"></p></section>
 <section class="card" aria-label="System workflow">
-<h2>Workflow test controls</h2>
-<p class="note">Simulated light and water-pump controllers. Choose their feedback below, then send a command.</p>
+<h2>Voice control</h2>
+<p class="note">Speak to control the bathroom, kitchen, and bedroom lights. Speech recognition and Ollama run locally. The Arduino controllers are simulated.</p>
 <button id="connect-system" class="secondary">Connect controls</button>
 <p id="system-status" role="status">Enter the pairing code above, then connect.</p>
 <div id="system-controls" hidden>
 <p id="service-status" class="note"></p>
-<div class="system-grid">
-<div class="device-card"><h3>Light · simulated MCU</h3><p id="lights-state">Unconfirmed</p>
-<p id="lights-message" class="note"></p><label for="lights-outcome">Feedback to simulate</label>
-<select id="lights-outcome"><option value="success">Success · apply command</option><option value="warning">Warning · apply with warning</option><option value="error">Error · reject command</option><option value="timeout">Timeout · no confirmation</option></select></div>
-<div class="device-card"><h3>Pump · simulated MCU</h3><p id="pump-state">Unconfirmed</p>
-<p id="pump-message" class="note"></p><label for="pump-outcome">Feedback to simulate</label>
-<select id="pump-outcome"><option value="success">Success · apply command</option><option value="warning">Warning · apply with warning</option><option value="error">Error · reject command</option><option value="timeout">Timeout · no confirmation</option></select></div>
-</div>
+<div id="device-cards" class="system-grid"></div>
 <label for="command-text">Say it in your own words</label>
-<textarea id="command-text" rows="2" placeholder="Could you switch on the lamp, please?"></textarea>
+<textarea id="command-text" rows="2" placeholder="Turn on the kitchen and bathroom lights, and turn off the bedroom."></textarea>
 <div class="buttons"><button id="send-command">Send through LLM</button></div>
 <p id="assistant-reply" role="status">Ready for your request.</p>
-<label class="check"><input id="read-replies" type="checkbox">Read replies aloud on this device</label>
-<p class="note">Spoken replies use your browser's available voices. Microphone transmission pauses while this device speaks.</p>
+<div class="speech-panel" aria-label="Voice feedback">
+<label class="check"><input id="read-replies" type="checkbox" checked>Play voice replies on this device</label>
+<button id="test-voice" class="secondary">Test voice</button>
+<p id="speech-status" class="note" role="status">Voice replies play here. Your microphone pauses during playback.</p>
+<p id="spoken-text" class="note"></p>
+<audio id="reply-audio" controls preload="auto" aria-label="Assistant voice reply"></audio>
+</div>
 <label class="check"><input id="voice-commands" type="checkbox" checked>Interpret incoming voice commands</label>
-<label class="check"><input id="gesture-commands" type="checkbox">Detect camera gestures · open palm = light on, closed fist = off</label>
 <p id="recognition-status" class="note"></p><p id="transcript" class="note"></p>
+<details><summary>Camera recognition and synthetic test inputs</summary>
+<label class="check"><input id="gesture-commands" type="checkbox">Detect camera gestures · open palm = all lights on, closed fist = off</label>
 <label for="test-gesture">Test a recognition event</label>
-<select id="test-gesture"><option value="Open_Palm">Open palm · light on</option><option value="Closed_Fist">Closed fist · light off</option><option value="Victory">Unmapped gesture · ask for clarification</option></select>
+<select id="test-gesture"><option value="Open_Palm">Open palm · all lights on</option><option value="Closed_Fist">Closed fist · all lights off</option><option value="Victory">Unmapped gesture · ask for clarification</option></select>
 <div class="buttons"><button id="send-gesture" class="secondary">Send test gesture</button></div>
+</details>
 <h3>Recent system events</h3><ol id="system-events" class="system-log" aria-label="System events"></ol>
 </div></section>
 <footer>Local prototype · Media stays in memory (up to 5 seconds of audio). Recognition runs locally through the gateway and Node-RED workflow.</footer>
@@ -312,8 +314,16 @@ if (monitor) {
   $('stop').textContent = 'Stop monitor';
   say('Enter the gateway code to view incoming video or audio.');
 }
+let microphoneResume = null;
 window.addEventListener('ioe-speaking', event => {
-  if (stream) stream.getAudioTracks().forEach(track => { track.enabled = !event.detail; });
+  clearTimeout(microphoneResume);
+  if (event.detail) {
+    if (stream) stream.getAudioTracks().forEach(track => { track.enabled = false; });
+  } else {
+    microphoneResume = setTimeout(() => {
+      if (stream) stream.getAudioTracks().forEach(track => { track.enabled = true; });
+    }, 400);
+  }
 });
 window.addEventListener('pagehide', () => {
   if (stream) stream.getTracks().forEach(t => t.stop());

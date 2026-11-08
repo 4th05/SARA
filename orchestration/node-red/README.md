@@ -12,7 +12,10 @@ requests, recognition controls, device state, and the event log.
 
 The graph receives events, invokes Python interpretation, routes commands or
 clarification, registers pending state, calls the mock adapter, records feedback,
-and responds. Catch nodes route failures to Python state. A Python watchdog
+and responds. Native Split/Join nodes send independent bathroom, kitchen, and
+bedroom commands and combine their results. Each acknowledgement updates its
+room immediately. Python emits a spoken acknowledgement and combined controller
+result, including partial failures. Catch nodes route failures to Python state. A Python watchdog
 handles missing feedback. Inject buttons provide reference gesture and wording
 tests; choose the simulator outcomes in the monitor before using them.
 

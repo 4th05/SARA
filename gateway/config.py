@@ -12,7 +12,7 @@ LOCAL = PROJECT / ".local"
 
 class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    ollama_model: str = "qwen3.5:0.8b-q8_0"
+    ollama_model: str = "qwen3.5:2b-q4_K_M"
     ollama_url: str = "http://127.0.0.1:11434"
     workflow_url: str = "http://127.0.0.1:1880/ioe/event"
     command_timeout_seconds: float = Field(default=4, ge=1, le=30)
