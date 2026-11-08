@@ -10,6 +10,13 @@ Open http://localhost:1880/ to see the **IoE workflow** graph. The web monitor a
 http://localhost:8080/?view=monitor contains pairing, simulator settings, typed
 requests, recognition controls, device state, and the event log.
 
+The main tab shows three readable paths: commands, answers/clarification, and
+errors. Blue subflows contain the HTTP implementation. Double-click a blue node,
+then select **Edit flow template** to inspect its steps. **Control requested
+lights** shows registration, room splitting, Arduino feedback, and joining.
+Synthetic Inject buttons are on the separate **Test inputs** tab. The private
+readiness endpoint is on **Service health**.
+
 The graph receives events, invokes Python interpretation, routes commands or
 clarification, registers pending state, calls the mock adapter, records feedback,
 and responds. Native Split/Join nodes send independent bathroom, kitchen, and
