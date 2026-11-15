@@ -60,3 +60,22 @@ class SpeechRecognizer:
                                                condition_on_previous_text=False)
         self.language = info.language if info.language in ("en", "pt") else None
         return " ".join(segment.text.strip() for segment in segments)
+
+
+def decode_recording(data):
+    """Decode browser WebM/Opus or MP4/AAC recordings into the existing Whisper format."""
+    from av import AudioResampler, open as open_audio
+
+    pcm = bytearray()
+    resampler = AudioResampler(format='s16', layout='mono', rate=16000)
+    with open_audio(BytesIO(data)) as source:
+        for frame in source.decode(audio=0):
+            for chunk in resampler.resample(frame):
+                pcm.extend(bytes(chunk.planes[0])[:chunk.samples * 2])
+                if len(pcm) > 16000 * 2 * 16:
+                    raise ValueError('Recordings are limited to 15 seconds.')
+        for chunk in resampler.resample(None):
+            pcm.extend(bytes(chunk.planes[0])[:chunk.samples * 2])
+    if len(pcm) < 16000:
+        raise ValueError('Please hold the button and speak for at least half a second.')
+    return bytes(pcm)

@@ -7,7 +7,7 @@ Run the complete application from the repository root with:
 ```
 
 Open http://localhost:1880/ to see the **IoE workflow** graph. The web monitor at
-http://localhost:8080/?view=monitor contains pairing, simulator settings, typed
+http://localhost:8080/?view=monitor requires Admin login and contains simulator settings, typed
 requests, recognition controls, device state, and the event log.
 
 The main tab shows three readable paths: commands, answers/clarification, and

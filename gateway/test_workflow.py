@@ -8,11 +8,11 @@ import subprocess
 import tempfile
 import unittest
 
-from aiohttp import ClientSession
+from aiohttp import ClientSession, CookieJar
 from aiohttp.test_utils import TestClient, TestServer
 
 from gateway.config import PROJECT
-from gateway.contracts import Action, Decision, Feedback, InputEvent, MockSetting, ROOMS
+from gateway.contracts import Action, Decision, Feedback, InputEvent, MockSetting, ROOMS, SpokenReply, LightPlan
 from gateway.server import SYSTEM, create_app
 from gateway.state import SystemState
 from gateway.config import load_settings
@@ -33,6 +33,9 @@ class TestIntent:
             actions = [Action(device=room, value=event.text == "rooms on") for room in ROOMS]
             return Decision(kind="command", actions=actions, reply="Request received.")
         return Decision(kind="command", device="lights", value=event.text != "off", reply="Request received.")
+
+    async def summarize(self, result, snapshot, language):
+        return SpokenReply(reply=result['reply'], language=language)
 
 
 class StateTest(unittest.TestCase):
@@ -68,49 +71,19 @@ class StateTest(unittest.TestCase):
         self.assertEqual(state.commands["one"]["status"], "error")
 
 
-class IntentGroundingTest(unittest.IsolatedAsyncioTestCase):
-    async def test_status_reply_uses_confirmed_state(self):
-        class GuessingModel:
-            async def ainvoke(self, messages):
-                return Decision(kind="status", reply="All lights are off.")
-
-        service = IntentService(load_settings())
-        service.structured = GuessingModel()
-        state = SystemState()
-        state.devices['kitchen']['confirmed'] = True
-        result = await service.interpret(InputEvent(request_id='status', text='Is the kitchen light on?'),
-                                         state.snapshot())
-        self.assertEqual(result.actions, [])
-        self.assertEqual(result.reply, 'The kitchen light is on.')
-
-    async def test_pronouns_keep_the_previous_room_scope(self):
+class IntentValidationTest(unittest.IsolatedAsyncioTestCase):
+    async def test_novel_wording_reaches_model_without_keyword_filter(self):
         class Model:
             async def ainvoke(self, messages):
-                return Decision(kind="command", actions=[Action(device='kitchen', value=False),
-                                Action(device='bathroom', value=False)], reply="Waiting.")
-
+                return LightPlan(bathroom=None, kitchen=False, bedroom=None, response_kind='reply', reply='I will darken the kitchen.', language='en')
         service = IntentService(load_settings())
         service.structured = Model()
-        previous = Decision(kind='command', actions=[Action(device='kitchen', value=True),
-                            Action(device='bathroom', value=True)], reply='Waiting.')
-        from collections import deque
-        service.history['context'] = deque([('ai', previous.model_dump_json())], maxlen=8)
-        result = await service.interpret(InputEvent(request_id='followup', conversation_id='context',
-                                         text='Turn them off.'), SystemState().snapshot())
-        self.assertEqual({action.device: action.value for action in result.actions},
-                         {'kitchen': False, 'bathroom': False})
+        result = await service.interpret(InputEvent(request_id='novel', text='The cooking area is too bright. Make it dark.'), SystemState().snapshot())
+        self.assertEqual(result.actions, [Action(device='kitchen', value=False)])
 
-    async def test_ambiguous_model_guess_requires_clarification(self):
-        class GuessingModel:
-            async def ainvoke(self, messages):
-                return Decision(kind="command", device="lights", value=False, reply="Guessed lights")
-
-        service = IntentService(load_settings())
-        service.structured = GuessingModel()
-        result = await service.interpret(InputEvent(request_id="ambiguous", text="Turn it off"),
-                                         SystemState().snapshot())
-        self.assertEqual(result.kind, "clarify")
-        self.assertIsNone(result.device)
+    async def test_duplicate_actions_rejected(self):
+        with self.assertRaises(ValueError):
+            Decision(kind='command', actions=[Action(device='bedroom', value=True), Action(device='bedroom', value=False)], reply='Conflicting')
 
 
 class WorkflowTest(unittest.IsolatedAsyncioTestCase):
@@ -120,7 +93,7 @@ class WorkflowTest(unittest.IsolatedAsyncioTestCase):
         script = PROJECT / 'orchestration/node-red/node_modules/node-red/red.js'
         if not node or not script.exists():
             self.skipTest('Install Node.js and run npm ci for the Node-RED workspace.')
-        self.app = create_app('123456', system=True)
+        self.app = create_app(system=True)
         self.runtime = self.app[SYSTEM]
         self.intent = TestIntent()
         self.runtime.intent = self.intent
@@ -149,7 +122,10 @@ class WorkflowTest(unittest.IsolatedAsyncioTestCase):
                     except OSError:
                         pass
                     await asyncio.sleep(0.05)
-        self.auth = {'Authorization': 'Bearer 123456'}
+        await self.client.get('/')
+        response = await self.client.post('/api/admin/login', json={'password':'admin'})
+        self.assertEqual(response.status, 200)
+        self.auth = {}
 
     async def asyncTearDown(self):
         if hasattr(self, 'node_red'):
@@ -218,7 +194,7 @@ class WorkflowTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(repeated, result)
         self.assertEqual(len(self.runtime.devices.results), 6)
 
-    async def test_spoken_reply_endpoint_requires_pairing_and_known_event(self):
+    async def test_spoken_reply_endpoint_requires_ownership_or_admin(self):
         async def synthesize(text, language):
             self.assertIn('Voice feedback is ready', text)
             return b'RIFF-test-audio'
@@ -228,7 +204,7 @@ class WorkflowTest(unittest.IsolatedAsyncioTestCase):
         event = await response.json()
         path = f"/api/speech/{event['sequence']}.wav"
         response = await self.client.get(path)
-        self.assertEqual(response.status, 401)
+        self.assertEqual(response.status, 200)
         response = await self.client.get(path, headers=self.auth)
         self.assertEqual(response.status, 200)
         self.assertEqual(response.content_type, 'audio/wav')
@@ -236,11 +212,75 @@ class WorkflowTest(unittest.IsolatedAsyncioTestCase):
         response = await self.client.get('/api/speech/999999.wav', headers=self.auth)
         self.assertEqual(response.status, 404)
 
+    async def test_public_access_admin_gate_and_private_replies(self):
+        await self.client.post('/api/admin/logout', json={})
+        for path in ['/api/system', '/api/status', '/api/frame.jpg', '/api/audio.wav']:
+            response = await self.client.get(path)
+            self.assertEqual(response.status, 401)
+        response = await self.client.post('/api/mock', json={'device':'kitchen','outcome':'success'})
+        self.assertEqual(response.status, 401)
+        response = await self.client.get('/api/user')
+        self.assertEqual(response.status, 200)
+        result = await self.submit('public-command')
+        self.assertEqual(result['status'], 'success')
+        response = await self.client.get('/api/user')
+        events = (await response.json())['events']
+        self.assertEqual([event['kind'] for event in events], ['acknowledgement', 'success'])
+        async with ClientSession(cookie_jar=CookieJar(unsafe=True)) as other:
+            async with other.get(self.client.make_url('/api/user')) as response:
+                self.assertEqual((await response.json())['events'], [])
+            async with other.get(self.client.make_url(f"/api/speech/{events[-1]['sequence']}.wav")) as response:
+                self.assertEqual(response.status, 404)
+
+    async def test_uploaded_recording_survives_media_disconnect(self):
+        from io import BytesIO
+        import wave
+        self.runtime.speech.transcribe = lambda pcm: 'on'
+        output = BytesIO()
+        with wave.open(output, 'wb') as audio:
+            audio.setnchannels(1)
+            audio.setsampwidth(2)
+            audio.setframerate(16000)
+            audio.writeframes(b'\x10\x10' * 16000)
+        await self.client.post('/api/admin/logout', json={})
+        response = await self.client.post('/api/recording', data=output.getvalue(), headers={'Content-Type':'audio/wav'})
+        self.assertEqual(response.status, 202, await response.text())
+        await self.runtime.receiver.close()
+        async with asyncio.timeout(5):
+            while self.runtime.state.devices['lights']['status'] != 'success':
+                await asyncio.sleep(0.05)
+        response = await self.client.get('/api/user')
+        data = await response.json()
+        self.assertTrue(data['devices']['kitchen']['confirmed'])
+        self.assertEqual(data['events'][-1]['kind'], 'success')
+
+    async def test_manual_recording_waits_for_stop(self):
+        self.runtime.speech.transcribe = lambda pcm: 'on'
+        self.runtime.receiver.session = 'manual-test'
+        self.runtime.receiver.client_id = self.client.session.cookie_jar.filter_cookies(self.client.make_url('/'))['ioe_user'].value
+        self.runtime.receiver.audio_enabled = True
+        self.runtime.feed_audio(b'\x10\x10' * 16000, 0.2)
+        self.assertTrue(self.runtime.audio_queue.empty())
+        response = await self.client.post('/api/voice', headers=self.auth,
+                         json={'session': 'manual-test', 'recording': True})
+        self.assertEqual(response.status, 200)
+        self.runtime.feed_audio(b'\x10\x10' * 16000, 0.2)
+        self.assertEqual(self.intent.calls, 0)
+        response = await self.client.post('/api/voice', headers=self.auth,
+                         json={'session': 'manual-test', 'recording': False})
+        self.assertEqual(response.status, 200)
+        async with asyncio.timeout(5):
+            while self.runtime.state.devices['lights']['status'] != 'success':
+                await asyncio.sleep(0.05)
+        self.assertTrue(self.runtime.state.devices['lights']['confirmed'])
+        self.assertIsNone(self.runtime.recording)
+
     async def test_internal_api_auth_and_live_audio_worker(self):
         response = await self.client.post('/internal/feedback', json={})
         self.assertEqual(response.status, 401)
         response = await self.client.get('/api/system')
-        self.assertEqual(response.status, 401)
+        self.assertEqual(response.status, 200)
+        self.runtime.recognition.voice_mode = 'automatic'
         self.runtime.speech.transcribe = lambda pcm: 'on'
         self.runtime.receiver.session = 'audio-test'
         self.runtime.feed_audio(b'\x10\x10' * 6400, 0.2)

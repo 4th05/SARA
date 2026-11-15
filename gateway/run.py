@@ -11,7 +11,7 @@ import subprocess
 from aiohttp import ClientSession, ClientTimeout, web
 
 from gateway.config import LOCAL, PROJECT, control_token, load_settings
-from gateway.server import PAIRING_CODE, create_app
+from gateway.server import create_app
 
 
 async def reachable(client, url, token):
@@ -80,8 +80,8 @@ async def serve(http_only=False):
             context.minimum_version = ssl.TLSVersion.TLSv1_2
             context.load_cert_chain(certificate, key)
             await web.TCPSite(runner, "0.0.0.0", 8443, ssl_context=context).start()
-        print(f"\nPairing code: {app[PAIRING_CODE]}", flush=True)
-        print("Monitor and test controls: http://localhost:8080/?view=monitor", flush=True)
+        print("\nUser interface: http://localhost:8080/", flush=True)
+        print("Admin monitor: use the Admin button in the app", flush=True)
         print("Node-RED workflow: http://localhost:1880/", flush=True)
         if not http_only:
             print(f"Phone: https://{wifi_address()}:8443/", flush=True)

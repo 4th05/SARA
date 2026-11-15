@@ -10,7 +10,7 @@ from aiortc import AudioStreamTrack, RTCConfiguration, RTCPeerConnection, RTCSes
 from av import VideoFrame
 from PIL import Image
 
-from server import PAIRING_CODE, RECEIVER, create_app
+from server import RECEIVER, create_app
 
 
 class RedVideo(VideoStreamTrack):
@@ -32,11 +32,14 @@ class ToneAudio(AudioStreamTrack):
 
 class GatewayTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.app = create_app("123456")
+        self.app = create_app()
         self.client = TestClient(TestServer(self.app))
         await self.client.start_server()
         self.peer = None
-        self.auth = {"Authorization": "Bearer 123456"}
+        await self.client.get('/')
+        response = await self.client.post('/api/admin/login', json={'password': 'admin'})
+        self.assertEqual(response.status, 200)
+        self.auth = {}
 
     async def asyncTearDown(self):
         if self.peer:
@@ -45,24 +48,23 @@ class GatewayTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_authentication_and_idle_preview(self):
         response = await self.client.get("/api/status")
-        self.assertEqual(response.status, 401)
+        self.assertEqual(response.status, 200)
         response = await self.client.get("/api/frame.jpg", headers=self.auth)
         self.assertEqual(response.status, 204)
         response = await self.client.get("/api/audio.wav")
-        self.assertEqual(response.status, 401)
+        self.assertEqual(response.status, 204)
         response = await self.client.get("/api/audio.wav", headers=self.auth)
         self.assertEqual(response.status, 204)
         response = await self.client.post("/api/offer", json={"type": "answer"}, headers=self.auth)
         self.assertEqual(response.status, 400)
 
-    async def test_pairing_code_and_guess_limit(self):
-        self.assertRegex(create_app()[PAIRING_CODE], r"^[0-9]{6}$")
+    async def test_admin_login_and_guess_limit(self):
+        await self.client.post('/api/admin/logout', json={})
         for _ in range(10):
-            response = await self.client.get("/api/status", headers={"Authorization": "Bearer 654321"})
+            response = await self.client.post('/api/admin/login', json={'password': 'wrong'})
             self.assertEqual(response.status, 401)
-        response = await self.client.get("/api/status", headers=self.auth)
+        response = await self.client.post('/api/admin/login', json={'password': 'wrong'})
         self.assertEqual(response.status, 429)
-        self.assertEqual(response.headers["Retry-After"], "60")
 
     async def connect(self, video=True, audio=True):
         self.peer = RTCPeerConnection(RTCConfiguration(iceServers=[]))

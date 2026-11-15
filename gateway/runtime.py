@@ -11,8 +11,9 @@ from gateway.contracts import (Decision, DeviceCommand, Feedback,
 from gateway.devices.mock import MockDevices
 from gateway.recognition.gesture import GestureRecognizer
 from gateway.recognition.intent import IntentService
-from gateway.recognition.speech import SpeechBuffer, SpeechRecognizer
+from gateway.recognition.speech import SpeechBuffer, SpeechRecognizer, decode_recording
 from gateway.state import SystemState
+from gateway.access import CLIENT, ADMIN
 from gateway.speech_output import SpeechOutput
 
 
@@ -37,14 +38,18 @@ class SystemRuntime:
         self.last_video_at = 0
         self.voice_status = "Ready; share microphone audio and speak a short command."
         self.last_transcript = ""
+        self.recording = None
+        self.voice_busy = False
+        self.processing = set()
+        self.summary_lock = asyncio.Lock()
         self.last_gesture = ""
         self.health = {"node_red": False, "ollama": False, "model": settings.ollama_model}
 
     async def start(self):
-        self.client = ClientSession(timeout=ClientTimeout(total=self.settings.inference_timeout_seconds + 15))
+        self.client = ClientSession(timeout=ClientTimeout(total=2 * self.settings.inference_timeout_seconds + 15))
         self.receiver.on_audio = self.feed_audio
         self.receiver.on_video = self.feed_video
-        self.receiver.on_reset = self.speech_buffer.reset
+        self.receiver.on_reset = self.reset_recording
         self.tasks = [asyncio.create_task(worker()) for worker in
                       (self.watchdog, self.voice_worker, self.gesture_worker, self.health_worker)]
         self.state.event("ready", "Voice workflow ready. Bathroom, kitchen, and bedroom controllers are simulated.")
@@ -65,7 +70,7 @@ class SystemRuntime:
         return {**self.state.snapshot(), "mocks": self.devices.snapshot(),
                 "recognition": self.recognition.model_dump(), "health": self.health.copy(),
                 "voice_status": self.voice_status, "last_transcript": self.last_transcript,
-                "last_gesture": self.last_gesture,
+                "last_gesture": self.last_gesture, "recording": self.recording is not None, "voice_busy": self.voice_busy,
                 "speech_output": {"available": self.speech_output.available,
                                   "backend": self.speech_output.backend}}
 
@@ -83,6 +88,9 @@ class SystemRuntime:
             old = next((key for key, (_, task) in self.requests.items() if task.done()), None)
             if old:
                 del self.requests[old]
+        self.state.owners[event.request_id] = event.conversation_id
+        if len(self.state.owners) > 200:
+            self.state.owners.pop(next(iter(self.state.owners)))
         task = asyncio.create_task(self._submit(event))
         self.requests[event.request_id] = fingerprint, task
         return await asyncio.shield(task)
@@ -110,15 +118,33 @@ class SystemRuntime:
         self.state.event("error", message, request_id=request_id, speak=True, language="en")
         return {"request_id": request_id, "status": "error", "reply": message}
 
+    def reset_recording(self):
+        self.recording = None
+        self.speech_buffer.reset()
+
+    def finish_recording(self):
+        recording = self.recording
+        self.recording = None
+        if not recording or len(recording[1]) < 16000:
+            raise ValueError("Recording too short. Speak for at least half a second.")
+        if self.audio_queue.full() or self.voice_busy:
+            raise ValueError("Please wait for the current command to finish.")
+        self.processing.add(recording[0])
+        self.audio_queue.put_nowait((recording[0], bytes(recording[1])))
+        self.voice_status = "Transcribing your recording…"
+
     def feed_audio(self, pcm, level):
         if not self.recognition.voice_enabled:
-            self.speech_buffer.reset()
+            self.reset_recording()
+            return
+        if self.recognition.voice_mode == "manual":
+            if self.recording and self.recording[0] == self.receiver.client_id:
+                self.recording[1].extend(pcm)
+                if len(self.recording[1]) >= 16000 * 2 * 15:
+                    self.finish_recording()
             return
         utterance = self.speech_buffer.feed(pcm, level)
-        if utterance:
-            if self.audio_queue.full():
-                self.state.event("warning", "Speech processing is busy. Please repeat after the current request.")
-                return
+        if utterance and not self.audio_queue.full():
             self.audio_queue.put_nowait((self.receiver.session, utterance))
 
     def feed_video(self, frame):
@@ -131,22 +157,23 @@ class SystemRuntime:
         while True:
             session, pcm = await self.audio_queue.get()
             try:
-                if session != self.receiver.session or not self.recognition.voice_enabled:
-                    continue
+                self.voice_busy = True
                 self.voice_status = "Transcribing speech locally…"
                 text = await asyncio.to_thread(self.speech.transcribe, pcm)
-                if session != self.receiver.session or not self.recognition.voice_enabled:
-                    continue
                 self.last_transcript = text
                 if text:
                     self.voice_status = "Interpreting speech through Node-RED and Ollama…"
                     await self.submit(InputEvent(request_id=str(uuid.uuid4()), conversation_id=session or "voice",
                                                  source="voice", text=text, language=self.speech.language))
-                self.voice_status = "Listening for the next command."
+                if not text:
+                    self.state.event("clarify", "I could not hear a command. Please try again.", speak=True, language="en", conversation_id=session)
+                self.voice_status = "Ready. Hold to speak."
             except Exception as error:
                 self.voice_status = "Speech processing failed. Check the event log."
-                self.state.event("error", f"Speech processing failed: {error}", speak=True, language="en")
+                self.state.event("error", f"Speech processing failed: {error}", speak=True, language="en", conversation_id=session)
             finally:
+                self.voice_busy = False
+                self.processing.discard(session)
                 self.audio_queue.task_done()
 
     async def gesture_worker(self):
@@ -201,8 +228,27 @@ class SystemRuntime:
         async def system(request):
             return web.json_response(self.snapshot())
 
+        async def user_state(request):
+            client = request[CLIENT]
+            return web.json_response({
+                'devices': {name: self.state.devices[name] for name in ('bathroom', 'kitchen', 'bedroom')},
+                'events': [event for event in self.state.events if event.get('speak')
+                           and event.get('conversation_id') == client],
+                'busy': client in self.processing,
+                'recording': self.recording is not None and self.recording[0] == client,
+            })
+
+        async def video_complete(request):
+            self.state.event('reply', 'Video capture finished. Gesture recognition is not enabled in this stage.',
+                             speak=True, language='en', conversation_id=request[CLIENT])
+            return web.json_response({'status': 'captured'})
+
         async def submit(request):
-            event = InputEvent.model_validate(await request.json())
+            params = await request.json()
+            params["conversation_id"] = request[CLIENT]
+            event = InputEvent.model_validate(params)
+            if event.source == "gesture" and not request[ADMIN]:
+                raise web.HTTPForbidden()
             return web.json_response(await self.submit(event))
 
         async def mock_setting(request):
@@ -219,7 +265,8 @@ class SystemRuntime:
         async def speech_audio(request):
             sequence = int(request.match_info["sequence"])
             event = next((event for event in self.state.events
-                          if event["sequence"] == sequence and event.get("speak")), None)
+                          if event["sequence"] == sequence and event.get("speak")
+                          and (request[ADMIN] or event.get("conversation_id") == request[CLIENT])), None)
             if event is None:
                 raise web.HTTPNotFound(text="This spoken reply is no longer in the recent event history.")
             try:
@@ -230,8 +277,47 @@ class SystemRuntime:
 
         async def test_speech(request):
             event = self.state.event("reply", "Voice feedback is ready. You can now speak a command.",
-                                     speak=True, language="en")
+                                     speak=True, language="en", conversation_id=request[CLIENT])
             return web.json_response(event)
+
+        async def upload_recording(request):
+            if request[CLIENT] in self.processing or self.audio_queue.full():
+                raise web.HTTPConflict(text='Please wait for your current request to finish.')
+            if not request.content_type.startswith('audio/'):
+                raise web.HTTPUnsupportedMediaType(text='A browser audio recording is required.')
+            data = await request.read()
+            try:
+                pcm = await asyncio.to_thread(decode_recording, data)
+            except Exception:
+                self.state.event('clarify', 'I could not read that recording. Please hold the button, speak for at least half a second, and release.',
+                                 speak=True, language='en', conversation_id=request[CLIENT])
+                return web.json_response({'status': 'clarify'}, status=202)
+            if request[CLIENT] in self.processing or self.audio_queue.full():
+                raise web.HTTPConflict(text='Please wait for your current request to finish.')
+            self.processing.add(request[CLIENT])
+            self.audio_queue.put_nowait((request[CLIENT], pcm))
+            return web.json_response({'status': 'processing'}, status=202)
+
+        async def record_voice(request):
+            params = await request.json()
+            if (params.get("session") != self.receiver.session or not self.receiver.session
+                    or request[CLIENT] != self.receiver.client_id):
+                raise ValueError("Connect the microphone before recording.")
+            if params.get("recording") is True:
+                if self.voice_busy or not self.audio_queue.empty() or self.recording is not None:
+                    raise ValueError("Please wait for the current command to finish.")
+                if not self.receiver.audio_enabled:
+                    raise ValueError("Microphone audio is not connected.")
+                self.recognition.voice_mode = "manual"
+                self.recognition.voice_enabled = True
+                self.recording = (request[CLIENT], bytearray())
+                self.voice_status = "Recording… release to send."
+            elif params.get("recording") is False:
+                if self.recording is not None:
+                    self.finish_recording()
+            else:
+                raise ValueError("recording must be true or false.")
+            return web.json_response({"recording": self.recording is not None})
 
         async def interpret(request):
             event = InputEvent.model_validate(await request.json())
@@ -290,7 +376,16 @@ class SystemRuntime:
                     raise ValueError("Successful feedback must confirm the requested value.")
             for value in batch.feedback:
                 self.state.feedback(value)
-            return web.json_response(self.state.complete_batch(batch.request_id))
+            async with self.summary_lock:
+                group = self.state.groups[batch.request_id]
+                result = self.state.complete_batch(batch.request_id, announce=False)
+                if not group.get("announced"):
+                    try:
+                        spoken = await self.intent.summarize(result, self.state.snapshot(), group["language"])
+                        result = self.state.announce_result(batch.request_id, spoken.reply, spoken.language, "ollama")
+                    except Exception:
+                        result = self.state.announce_result(batch.request_id, source="controller_fallback")
+                return web.json_response(result)
 
         async def reply(request):
             params = await request.json()
@@ -309,10 +404,14 @@ class SystemRuntime:
             message = str(params.get("message", "Workflow failed."))[:500]
             return web.json_response(self.workflow_failure(command_id, message))
 
+        app.router.add_get("/api/user", user_state)
+        app.router.add_post("/api/video/complete", video_complete)
         app.router.add_get("/api/system", system)
         app.router.add_post("/api/input", submit)
         app.router.add_post("/api/mock", mock_setting)
         app.router.add_post("/api/recognition", recognition_setting)
+        app.router.add_post("/api/voice", record_voice)
+        app.router.add_post("/api/recording", upload_recording)
         app.router.add_get("/api/speech/{sequence:\\d+}.wav", speech_audio)
         app.router.add_post("/api/speech/test", test_speech)
         app.router.add_post("/internal/interpret", interpret)

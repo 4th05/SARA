@@ -80,6 +80,7 @@ class MockSetting(Message):
 
 
 class RecognitionSetting(Message):
+    voice_mode: Literal["manual", "automatic"] = "manual"
     voice_enabled: bool = True
     gesture_enabled: bool = False
 
@@ -92,3 +93,17 @@ class CommandBatch(Message):
 class FeedbackBatch(Message):
     request_id: str = Field(min_length=1, max_length=80)
     feedback: list[Feedback] = Field(min_length=1, max_length=4)
+
+
+class SpokenReply(Message):
+    reply: str = Field(min_length=1, max_length=1000)
+    language: Literal["en", "pt"]
+
+
+class LightPlan(Message):
+    bathroom: bool | None
+    kitchen: bool | None
+    bedroom: bool | None
+    response_kind: Literal["clarify", "status", "reply"]
+    reply: str = Field(min_length=1, max_length=500)
+    language: Literal["en", "pt"]

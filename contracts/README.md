@@ -5,8 +5,8 @@ schemas describe those messages for teammates working in other languages.
 
 ## Recognition input
 
-POST `/api/input` to the gateway using the pairing code in the Authorization
-header (`Bearer CODE`). Node-RED receives the same input through its private
+POST `/api/input` to the gateway without a user password. The gateway associates
+requests with an anonymous HttpOnly browser cookie. Node-RED receives the same input through its private
 `/ioe/event` endpoint. Example:
 
 ```json
@@ -84,9 +84,30 @@ when the gateway restarts.
 ## Spoken replies
 
 `GET /api/system` includes ordered events. Events marked `speak: true` contain
-`language` and the exact spoken text in `message`. With the pairing-code bearer
-header, fetch `GET /api/speech/<sequence>.wav` for real local TTS audio. The web
+`language` and the exact spoken text in `message`. Using the same browser session, fetch `GET /api/speech/<sequence>.wav` for real local TTS audio. The web
 app queues these in sequence and provides an audio player for replay. The event
 history and audio cache are bounded and never persisted. `POST /api/speech/test`
 creates a short voice-output check. Voice input still arrives through WebRTC,
 is transcribed by Whisper, and goes through the actual Ollama/Node-RED workflow.
+
+## Hold-to-capture and admin access
+
+The browser records audio while the capture button is held. On release it stops
+all local media tracks and sends the audio Blob to `POST /api/recording` with its
+actual audio content type (WebM/Opus or MP4/AAC). The gateway decodes the recording
+to mono 16 kHz PCM and queues the existing Whisper/Ollama workflow. Accepted
+recordings continue processing after the WebRTC preview connection closes.
+`GET /api/user` returns the current room states, user processing status, and only
+that browser user's spoken feedback events. Speech WAV requests use the same
+cookie and require event ownership or an authenticated admin session.
+
+`POST /api/admin/login` accepts `{"password":"admin"}` and establishes an
+HttpOnly admin session cookie. The password comes from `ADMIN_PASSWORD` in `.env`.
+`/api/system`, `/api/mock`, `/api/recognition`, raw media preview, and monitoring
+APIs require admin login. `POST /api/admin/logout` revokes the session.
+The existing private Node-RED service token remains required for `/internal/`.
+
+The earlier session-based `POST /api/voice` recording interface remains available
+for adapters. New browser clients use `/api/recording` so no audio is lost during
+WebRTC negotiation. Video-only completion produces a spoken notice that gesture
+recognition is not enabled yet, with no device actions.

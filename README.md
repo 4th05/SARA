@@ -16,63 +16,50 @@ From the IoE folder:
 ./tools/start_system.sh
 ```
 
-The launcher starts/reuses local Ollama and Node-RED, starts the gateway, and
-prints a fresh six-digit pairing code plus the phone address.
+The launcher starts/reuses Ollama and Node-RED and prints the phone HTTPS URL.
+Open that URL on the phone. User access is password-free.
 
-- Monitor and test controls: http://localhost:8080/?view=monitor
-- Node-RED workflow editor: http://localhost:1880/
-- Phone on this Wi-Fi: https://192.168.1.163:8443/
+Choose **Audio**, **Video**, or **Both**. Hold the large capture button and release
+it when finished. Allow browser microphone/camera permission when prompted. If
+permission completes after release, hold again to start the recording. Capture
+is limited to 15 seconds. Audio is recorded in the browser and submitted on
+release, so the beginning of a request is preserved while the live connection
+starts. WebRTC provides live media to the monitor while capturing. All local
+tracks stop on release.
 
-Enter the code in the page and select **Connect controls**. On the phone select
-microphone (selected by default) and **Start sharing**. Leave **Play voice replies**
-enabled on the phone. Select **Test voice** to verify its speaker. Microphone commands are
-interpreted automatically after a short pause in speech. The audio meter, heard
-transcript, processing status, event list, and device cards show each stage.
-Ctrl+C closes the gateway and services started by the launcher.
+After release, Whisper transcribes the recording, Ollama maps its meaning to
+room actions, and Node-RED coordinates the simulated Arduino feedback. Ollama
+then describes the actual result. The same text appears in **System feedback**
+and is converted to Piper audio. The player supports replay and manual Play if
+a browser blocks automatic audio. A factual controller reply is used if the
+final LLM summary is unavailable. This fallback is marked in admin events.
 
-## Test without hardware
+The supported lights are **bathroom**, **kitchen**, and **bedroom**. Try “turn all
+lights on”, “make the cooking area brighter and leave the bedroom dark”, or
+mixed room commands. Interpretation uses the LLM prompt and structured output.
+Ambiguous or contradictory requests should ask for clarification. Video capture
+and preview are available; gesture classification remains deferred for this stage.
 
-1. Connect the controls using the pairing code.
-2. Select the desired feedback for the light or pump.
-3. Speak through the connected phone, or type a request such as “Turn on the kitchen light” and select **Send through LLM**.
-4. Hear the acknowledgement and controller result, and watch each room’s confirmed state.
-
-Try “Turn all lights on”, “Turn off the bathroom and bedroom lights”, or
-“Turn on the kitchen and bathroom, and turn off the bedroom”. Portuguese requests
-such as “Ligue a cozinha e desligue o quarto” are also supported. Different rooms
-can return different outcomes in one request. A partial result reports each room
-without claiming that the entire request succeeded.
+For monitoring, click **Admin** on the same page and log in with `admin`.
+The password is configured with `ADMIN_PASSWORD` in the root `.env` file and is
+loaded on startup. `.env` is ignored by Git; `.env.example` provides the default.
+The admin monitor contains service health, live preview, transcripts, events,
+and simulator outcome dropdowns. Direct monitor URLs and admin APIs require the
+same login. Public users receive their own feedback log and audio.
 
 | Simulator outcome | Behavior |
 |---|---|
-| Success | Applies the command and confirms its value. |
+| Success | Applies the command and confirms the state. |
 | Warning | Applies the command and reports a simulated supply warning. |
 | Error | Rejects the command and preserves the last confirmed value. |
-| Timeout | Sends no timely acknowledgement; Python records a timeout. |
+| Timeout | Reports missing confirmation and preserves the last confirmed value. |
 
-“Turn it off” without a clear target/context asks for clarification. Follow-up
-questions share context within a browser or phone-media session. The state log
-provides actual outcomes to subsequent LLM requests, including reported errors.
-**Play voice replies** queues the acknowledgement before the final result. The
-phone plays real WAV audio from the gateway, with a visible player and replay
-controls. Its microphone transmission pauses during playback. Automatic speech
-is enabled on the phone and disabled on the monitor to avoid duplicate speakers.
-If the browser blocks automatic playback, use the audio player’s Play button.
-Keep the phone page in the foreground during this browser prototype.
+Different rooms can return different outcomes. Partial results describe every
+room's actual result. Physical MCU and Raspberry Pi testing remain outstanding.
 
-Speech output uses local Piper neural voices: `en_US-lessac-medium` for English
-and `pt_BR-faber-medium` for Portuguese. Setup downloads approximately 63 MB per
-voice. Models stay loaded for quick repeated replies. No paid API is required. Acknowledgements and controller outcomes use concise, factual phrases in
-English or Portuguese. Ollama generates interpretation, clarification, and status
-responses, which are also converted to audio. No second LLM call delays a device
-confirmation.
-
-**Send test gesture** injects a recognition event through the same workflow.
-Optional live camera recognition uses MediaPipe. Enable **Detect camera gestures**
-for the reference mapping of open palm to all three lights on and closed fist to all three lights off.
-The gesture model requires three stable detections at >= 80% confidence and
-suppresses repeated events from a held gesture. The ML teammate can replace this
-adapter and agree the intended gesture mappings.
+Local desktop UI is at http://localhost:8080/ and the workflow editor is at
+http://localhost:1880/. Phones use the HTTPS URL printed by the launcher.
+Ctrl+C closes the gateway and services started by the launcher.
 
 ## Workflow
 

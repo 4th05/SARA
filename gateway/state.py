@@ -18,8 +18,12 @@ class SystemState:
         self.groups = {}
         self.events = deque(maxlen=60)
         self.sequence = 0
+        self.owners = {}
 
     def event(self, kind, message, **details):
+        request_id = details.get("request_id")
+        if request_id in self.owners:
+            details.setdefault("conversation_id", self.owners[request_id])
         self.sequence += 1
         record = {"sequence": self.sequence, "time": time.time(), "kind": kind,
                   "message": message, **details}
@@ -86,7 +90,7 @@ class SystemState:
             single = Decision(kind="command", device=action.device, value=action.value,
                               reply=decision.reply, language=decision.language)
             self.begin(child, single)
-        self.event("acknowledgement", acknowledge(decision.actions, decision.language),
+        self.event("acknowledgement", decision.reply,
                    request_id=event.request_id, speak=True, language=decision.language)
         return self.command_batch(event.request_id)
 
@@ -96,7 +100,7 @@ class SystemState:
                     for key in ("command_id", "device", "value")}) for identifier in group["command_ids"]]
         return CommandBatch(request_id=request_id, commands=commands)
 
-    def complete_batch(self, request_id):
+    def complete_batch(self, request_id, announce=True):
         group = self.groups[request_id]
         if "result" in group:
             return group["result"]
@@ -121,7 +125,20 @@ class SystemState:
                   "device": feedback[0].device if len(feedback) == 1 else "lights",
                   "feedback": [value.model_dump() for value in feedback]}
         group["result"] = result
-        self.event(status, reply, request_id=request_id, speak=True, language=group["language"])
+        if announce:
+            self.announce_result(request_id)
+        return result
+
+    def announce_result(self, request_id, reply=None, language=None, source="controller"):
+        group = self.groups[request_id]
+        if group.get("announced"):
+            return group["result"]
+        result = group["result"]
+        if reply:
+            result["reply"] = reply
+        group["announced"] = True
+        self.event(result["status"], result["reply"], request_id=request_id, speak=True,
+                   language=language or group["language"], reply_source=source)
         return result
 
     def feedback(self, feedback: Feedback):

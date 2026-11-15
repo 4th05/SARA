@@ -1,333 +1,38 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Assistive IoE · Phone connection</title>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Assistive IoE</title>
 <style>
-:root{font-family:system-ui,sans-serif;color:#172c36;background:#f2f5f3}*{box-sizing:border-box}body{margin:0}
-main{max-width:760px;margin:0 auto;padding:28px 20px}header{display:flex;justify-content:space-between;align-items:center;gap:16px}
-.brand{font-size:19px;font-weight:750}nav{margin:26px 0;display:flex;gap:20px}a{color:#185a65;text-underline-offset:4px}
-h1{font-size:clamp(28px,6vw,40px);line-height:1.15;margin:18px 0 12px}p{line-height:1.55;color:#49616b}
-.card{padding:24px;background:#fff;border:1px solid #d3ded9;border-radius:18px;margin-top:22px}
-label{display:block;font-weight:650;margin:18px 0 8px}input,select,button{font:inherit;min-height:50px;border-radius:10px}
-input:not([type=checkbox]),select{width:100%;padding:12px;border:1px solid #a5b9b8;background:#fff}
-#code{font-size:24px;letter-spacing:.22em;max-width:280px}
-.check{display:flex;gap:12px;align-items:center;font-weight:500}.check input{width:22px;height:22px;min-height:22px}
-.buttons{display:flex;gap:12px;margin:24px 0 0;flex-wrap:wrap}button{padding:12px 22px;border:1px solid #185a65;background:#185a65;color:#fff;font-weight:650;cursor:pointer}
-button.secondary{background:#fff;color:#185a65}button:disabled{opacity:.45;cursor:default}button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #e0a83e;outline-offset:3px}
-.pill{padding:7px 12px;background:#e5eee9;border-radius:30px;font-size:14px}.preview{background:#132b34;border-radius:12px;overflow:hidden;margin-top:22px}
-video,img{display:block;width:100%;max-height:52vh;object-fit:contain}video.mirror{transform:scaleX(-1)}[hidden]{display:none!important}
-.note{font-size:14px}#message{min-height:48px}#metrics{font-variant-numeric:tabular-nums}footer{font-size:13px;color:#607780;margin:24px 0}
-.audio-panel{background:#edf5f1;border:1px solid #d3ded9;border-radius:12px;padding:18px;margin-top:18px}
-.audio-panel p{margin:8px 0 0}.audio-heading{display:flex;align-items:center;gap:10px;font-weight:700}
-.audio-dot{width:10px;height:10px;border-radius:50%;background:#7a8f91}.audio-dot.active{background:#19735c;box-shadow:0 0 0 4px #19735c18}
-meter{display:block;width:100%;height:22px;margin-top:12px;accent-color:#19735c}
-
-.system-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px}
-.device-card{padding:18px;border:1px solid #d3ded9;border-radius:12px;background:#f7faf8}
-.device-card h3{margin:0 0 10px}.device-card p{margin:6px 0}.system-log{padding-left:22px;max-height:260px;overflow:auto}
-.system-log li{padding:6px 0;line-height:1.45}.system-log .error,.system-log .timeout{color:#a4262c}
-.system-log .warning{color:#805b0c}textarea{width:100%;font:inherit;border:1px solid #a5b9b8;border-radius:10px;padding:12px}
-#assistant-reply{padding:14px;background:#edf5f1;border-radius:10px;white-space:pre-wrap}
-.light-state{font-size:22px;font-weight:700}.device-card.on{background:#fff8db;border-color:#d3ae3d}
-audio{width:100%;margin-top:12px}.speech-panel{border:1px solid #c8ded4;border-radius:12px;padding:16px;margin-top:20px}
-</style></head><body><main>
-<header><div class="brand">Assistive IoE</div><span id="state" class="pill">Ready</span></header>
-<nav aria-label="Connection mode"><a href="/">Phone sender</a><a href="/?view=monitor">Gateway monitor</a></nav>
-<h1 id="title">Share video or audio</h1>
-<p id="intro">Choose camera, microphone, or both. You control when sharing starts and stops.</p>
-<section class="card" aria-label="Media connection">
-<label for="code">6-digit pairing code</label>
-<input id="code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="off" spellcheck="false" placeholder="000000" aria-describedby="code-help">
-<p id="code-help" class="note">Shown in the gateway terminal.</p>
-<div id="sender-options">
-<label class="check"><input id="video" type="checkbox">Share camera</label>
-<label class="check"><input id="audio" type="checkbox" checked>Share microphone</label>
-<div id="camera-options"><label for="camera">Camera</label><select id="camera"><option value="user">Front camera</option><option value="environment">Rear camera</option></select></div>
-</div>
-<div class="buttons"><button id="start">Start sharing</button><button id="stop" class="secondary" disabled>Stop sharing</button></div>
-<p id="message" role="status" aria-live="polite">Nothing is being shared.</p>
-<div class="preview" id="preview" hidden><video id="local" playsinline autoplay muted></video><img id="remote" alt="Live phone camera received by the gateway" hidden></div>
-<div id="audio-panel" class="audio-panel" hidden>
-<div class="audio-heading"><span id="audio-dot" class="audio-dot" aria-hidden="true"></span><span id="audio-title">Microphone</span></div>
-<meter id="audio-meter" min="0" max="1" value="0" aria-label="Audio level"></meter>
-<p id="audio-status" role="status">Waiting for audio…</p>
-<p id="audio-delivery" class="note">Waiting for the gateway.</p>
-</div>
-<p id="metrics" class="note"></p></section>
-<section class="card" aria-label="System workflow">
-<h2>Voice control</h2>
-<p class="note">Speak to control the bathroom, kitchen, and bedroom lights. Speech recognition and Ollama run locally. The Arduino controllers are simulated.</p>
-<button id="connect-system" class="secondary">Connect controls</button>
-<p id="system-status" role="status">Enter the pairing code above, then connect.</p>
-<div id="system-controls" hidden>
-<p id="service-status" class="note"></p>
-<div id="device-cards" class="system-grid"></div>
-<label for="command-text">Say it in your own words</label>
-<textarea id="command-text" rows="2" placeholder="Turn on the kitchen and bathroom lights, and turn off the bedroom."></textarea>
-<div class="buttons"><button id="send-command">Send through LLM</button></div>
-<p id="assistant-reply" role="status">Ready for your request.</p>
-<div class="speech-panel" aria-label="Voice feedback">
-<label class="check"><input id="read-replies" type="checkbox" checked>Play voice replies on this device</label>
-<button id="test-voice" class="secondary">Test voice</button>
-<p id="speech-status" class="note" role="status">Voice replies play here. Your microphone pauses during playback.</p>
-<p id="spoken-text" class="note"></p>
-<audio id="reply-audio" controls preload="auto" aria-label="Assistant voice reply"></audio>
-</div>
-<label class="check"><input id="voice-commands" type="checkbox" checked>Interpret incoming voice commands</label>
-<p id="recognition-status" class="note"></p><p id="transcript" class="note"></p>
-<details><summary>Camera recognition and synthetic test inputs</summary>
-<label class="check"><input id="gesture-commands" type="checkbox">Detect camera gestures · open palm = all lights on, closed fist = off</label>
-<label for="test-gesture">Test a recognition event</label>
-<select id="test-gesture"><option value="Open_Palm">Open palm · all lights on</option><option value="Closed_Fist">Closed fist · all lights off</option><option value="Victory">Unmapped gesture · ask for clarification</option></select>
-<div class="buttons"><button id="send-gesture" class="secondary">Send test gesture</button></div>
-</details>
-<h3>Recent system events</h3><ol id="system-events" class="system-log" aria-label="System events"></ol>
-</div></section>
-<footer>Local prototype · Media stays in memory (up to 5 seconds of audio). Recognition runs locally through the gateway and Node-RED workflow.</footer>
-</main><script>
-const $ = id => document.getElementById(id);
-const monitor = new URLSearchParams(location.search).get('view') === 'monitor';
-let pc = null, stream = null, session = null, running = false;
-let timer = null, frameURL = null, generation = 0;
-let audioContext = null, audioAnimation = null, audioSource = null;
-const say = (text, state) => { $('message').textContent = text; if (state) $('state').textContent = state; };
-const auth = () => ({'Authorization': 'Bearer ' + $('code').value.trim()});
-async function api(path, options = {}) {
-  const response = await fetch(path, {...options, headers: {...auth(), ...(options.headers || {})}});
-  if (!response.ok) throw Error(await response.text());
-  return response;
-}
-function controls(active) {
-  $('start').disabled = active || (!monitor && !$('video').checked && !$('audio').checked);
-  $('stop').disabled = !active;
-  ['code', 'camera', 'video', 'audio'].forEach(id => $(id).disabled = active);
-}
-function selectionChanged() {
-  $('camera-options').hidden = !$('video').checked;
-  controls(running);
-  say($('video').checked || $('audio').checked ? 'Nothing is being shared.' : 'Select camera, microphone, or both.');
-}
-$('video').onchange = $('audio').onchange = selectionChanged;
-$('code').oninput = () => { $('code').value = $('code').value.replace(/[^0-9]/g, '').slice(0, 6); };
-function showLevel(level) {
-  // A decibel scale makes ordinary speech visible without hiding quiet sounds.
-  const db = 20 * Math.log10(Math.max(level, 0.000001));
-  $('audio-meter').value = Math.max(0, Math.min(1, (db + 60) / 60));
-}
-async function startAudioMeter(media) {
-  $('audio-panel').hidden = false;
-  $('audio-title').textContent = 'Microphone on';
-  $('audio-status').textContent = 'Listening · speak to see the level move';
-  $('audio-dot').classList.add('active');
-  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-  if (!AudioContextClass) return; // Gateway measurements remain available.
-  try {
-    audioContext = audioContext || new AudioContextClass();
-    audioContext.resume().catch(() => {});
-    if (!running || stream !== media) return;
-    audioSource = audioContext.createMediaStreamSource(media);
-    const analyser = audioContext.createAnalyser();
-    analyser.fftSize = 1024;
-    audioSource.connect(analyser); // No speaker connection: avoids feedback.
-    const samples = new Float32Array(analyser.fftSize);
-    function draw() {
-      if (!running || stream !== media) return;
-      analyser.getFloatTimeDomainData(samples);
-      let sum = 0;
-      for (const value of samples) sum += value * value;
-      showLevel(Math.sqrt(sum / samples.length));
-      audioAnimation = requestAnimationFrame(draw);
-    }
-    draw();
-  } catch {
-    if (audioContext) await audioContext.close().catch(() => {});
-    audioContext = null;
-  }
-}
-function waitForICE(peer) {
-  return new Promise((resolve, reject) => {
-    if (peer.iceGatheringState === 'complete') return resolve();
-    const timeout = setTimeout(() => {
-      peer.removeEventListener('icegatheringstatechange', check);
-      reject(Error('Network setup timed out. Check that both devices use the same Wi-Fi.'));
-    }, 12000);
-    function check() {
-      if (peer.iceGatheringState === 'complete') {
-        clearTimeout(timeout);
-        peer.removeEventListener('icegatheringstatechange', check);
-        resolve();
-      }
-    }
-    peer.addEventListener('icegatheringstatechange', check);
-  });
-}
-async function stop() {
-  running = false;
-  generation++;
-  clearTimeout(timer);
-  cancelAnimationFrame(audioAnimation);
-  const oldSession = session;
-  session = null;
-  if (stream) stream.getTracks().forEach(t => t.stop());
-  stream = null;
-  if (pc) { pc.onconnectionstatechange = null; pc.close(); pc = null; }
-  if (audioSource) audioSource.disconnect();
-  audioSource = null;
-  const oldContext = audioContext;
-  audioContext = null;
-  if (oldContext) await oldContext.close().catch(() => {});
-  $('local').srcObject = null;
-  $('preview').hidden = $('audio-panel').hidden = true;
-  $('audio-meter').value = 0;
-  $('audio-dot').classList.remove('active');
-  if (frameURL) { URL.revokeObjectURL(frameURL); frameURL = null; }
-  if (oldSession) {
-    try { await api('/api/session', {method: 'DELETE', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({session: oldSession})}); } catch {}
-  }
-  controls(false);
-  say(monitor ? 'Monitor stopped.' : 'Sharing stopped.', 'Stopped');
-  $('metrics').textContent = '';
-}
-async function poll(id) {
-  if (!running || id !== generation) return;
-  try {
-    const data = await (await api('/api/status')).json();
-    if (id !== generation) return;
-    const videoLive = data.frame_age_ms !== null && data.frame_age_ms < 3000;
-    const audioLive = data.audio_age_ms !== null && data.audio_age_ms < 3000;
-    $('metrics').textContent = [
-      videoLive ? `${data.width} × ${data.height} · ${data.fps} FPS received` : (data.video_enabled ? 'Waiting for video' : 'Video off'),
-      audioLive ? 'Audio received' : (data.audio_enabled ? 'Waiting for audio' : 'Audio off')
-    ].join(' · ');
-    if (monitor || audioContext?.state !== 'running') showLevel(data.audio_level);
-    if (monitor) $('audio-panel').hidden = !data.audio_enabled;
-    if (data.audio_enabled) {
-      $('audio-title').textContent = monitor ? 'Incoming audio' : 'Microphone on';
-      $('audio-dot').classList.toggle('active', audioLive);
-      $('audio-status').textContent = audioLive ? (data.audio_level > 0.01 ? 'Sound detected' : 'Listening · quiet') : 'Waiting for audio…';
-      $('audio-delivery').textContent = audioLive ? 'Gateway receiving audio · voice workflow enabled when selected below' : 'No audio reaching the gateway yet.';
-    }
-    if (monitor) {
-      if (videoLive) {
-        const frame = await api('/api/frame.jpg');
-        if (frame.status === 200) {
-          const url = URL.createObjectURL(await frame.blob());
-          if (id !== generation) { URL.revokeObjectURL(url); return; }
-          const old = frameURL;
-          frameURL = url;
-          $('remote').src = url;
-          if (old) URL.revokeObjectURL(old);
-          $('preview').hidden = false;
-        }
-      } else $('preview').hidden = true;
-      if (videoLive || audioLive) say(`Receiving ${videoLive && audioLive ? 'video and audio' : videoLive ? 'video' : 'audio'} from the phone.`, 'Connected');
-      else say(data.state === 'idle' ? 'Open this app on the phone and start sharing.' : 'Waiting for media from the phone.', 'Waiting');
-    }
-  } catch (error) {
-    if (id !== generation) return;
-    $('audio-dot').classList.remove('active');
-    $('audio-delivery').textContent = 'Gateway connection unavailable.';
-    if (monitor || audioContext?.state !== 'running') showLevel(0);
-    say(error.message, 'Connection issue');
-  }
-  if (running && id === generation) timer = setTimeout(() => poll(id), monitor ? 200 : 500);
-}
-$('stop').onclick = stop;
-$('start').onclick = async () => {
-  if (!/^[0-9]{6}$/.test($('code').value.trim())) {
-    say('Enter the 6-digit code shown by the gateway.');
-    $('code').focus();
-    return;
-  }
-  if (!monitor && !$('video').checked && !$('audio').checked) return;
-  running = true;
-  const id = ++generation;
-  controls(true);
-  say('Connecting…', 'Connecting');
-  try {
-    // Resume during the tap, before network/media awaits (needed by Safari).
-    if (!monitor && $('audio').checked) {
-      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-      if (AudioContextClass) {
-        try { audioContext = new AudioContextClass(); audioContext.resume().catch(() => {}); } catch {}
-      }
-    }
-    await api('/api/status');
-    if (id !== generation) return;
-    if (monitor) { window.dispatchEvent(new Event('ioe-connected')); poll(id); return; }
-    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) throw Error('Media access needs HTTPS on the phone. Open the gateway’s trusted HTTPS address.');
-    const wantVideo = $('video').checked, wantAudio = $('audio').checked;
-    const media = await navigator.mediaDevices.getUserMedia({
-      video: wantVideo ? {facingMode: {ideal: $('camera').value}, width: {ideal: 1280}, height: {ideal: 720}, frameRate: {ideal: 24, max: 30}} : false,
-      audio: wantAudio ? {echoCancellation: true, noiseSuppression: true} : false
-    });
-    if (id !== generation) { media.getTracks().forEach(t => t.stop()); return; }
-    stream = media;
-    if (wantVideo) {
-      $('local').srcObject = media;
-      $('local').classList.toggle('mirror', $('camera').value === 'user');
-      $('preview').hidden = false;
-      await $('local').play();
-    }
-    if (wantAudio) await startAudioMeter(media);
-    if (id !== generation) return;
-    const peer = new RTCPeerConnection({iceServers: []});
-    pc = peer;
-    media.getTracks().forEach(track => {
-      peer.addTrack(track, media);
-      track.onended = () => { if (running) stop(); };
-    });
-    peer.getTransceivers().forEach(t => t.direction = 'sendonly');
-    peer.onconnectionstatechange = () => {
-      if (id !== generation) return;
-      if (peer.connectionState === 'connected') {
-        window.dispatchEvent(new Event('ioe-connected'));
-        say(`${wantVideo && wantAudio ? 'Video and audio are' : wantVideo ? 'Video is' : 'Audio is'} streaming to the gateway.`, 'Sharing');
-        poll(id);
-      } else if (peer.connectionState === 'failed') {
-        stop().then(() => say('Connection failed. Check Wi-Fi and try again.', 'Disconnected'));
-      }
-    };
-    await peer.setLocalDescription(await peer.createOffer());
-    await waitForICE(peer);
-    if (id !== generation) return;
-    const response = await api('/api/offer', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({sdp: peer.localDescription.sdp, type: peer.localDescription.type})});
-    const answer = await response.json();
-    if (id !== generation) {
-      await api('/api/session', {method: 'DELETE', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({session: answer.session})});
-      return;
-    }
-    session = answer.session;
-    await peer.setRemoteDescription({sdp: answer.sdp, type: answer.type});
-  } catch (error) {
-    if (id !== generation) return;
-    await stop();
-    say(error.name === 'NotAllowedError' ? 'Media permission was denied. Allow access in your browser settings and try again.' : error.message, 'Not connected');
-  }
-};
-if (monitor) {
-  $('title').textContent = 'Live input at the gateway';
-  $('intro').textContent = 'See video and audio arriving from the phone on this Mac or Raspberry Pi.';
-  $('sender-options').hidden = true;
-  $('local').hidden = true;
-  $('remote').hidden = false;
-  $('start').textContent = 'Connect monitor';
-  $('stop').textContent = 'Stop monitor';
-  say('Enter the gateway code to view incoming video or audio.');
-}
-let microphoneResume = null;
-window.addEventListener('ioe-speaking', event => {
-  clearTimeout(microphoneResume);
-  if (event.detail) {
-    if (stream) stream.getAudioTracks().forEach(track => { track.enabled = false; });
-  } else {
-    microphoneResume = setTimeout(() => {
-      if (stream) stream.getAudioTracks().forEach(track => { track.enabled = true; });
-    }, 400);
-  }
-});
-window.addEventListener('pagehide', () => {
-  if (stream) stream.getTracks().forEach(t => t.stop());
-  if (pc) pc.close();
-  if (audioContext) audioContext.close();
-});
-</script><script src="/system.js"></script></body></html>
+:root{font-family:system-ui,sans-serif;color:#183630;background:#f1f5f2;font-size:17px}*{box-sizing:border-box}body{margin:0}main{max-width:860px;margin:auto;padding:24px 20px 48px}header{display:flex;align-items:center;justify-content:space-between;margin-bottom:28px}.brand{font-size:22px;font-weight:750}button,input,select{font:inherit}button{cursor:pointer;border:1px solid #b6c9c1;border-radius:12px;padding:12px 20px;min-height:48px;background:#fff;color:#214f40;font-weight:650}button:disabled{opacity:.55;cursor:wait}button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #c99420;outline-offset:3px}h1{font-size:clamp(28px,6vw,38px);margin:0 0 10px;line-height:1.2}h2{font-size:21px;margin:0 0 18px}p{line-height:1.55}.muted{color:#566e63}.card{background:#fff;border:1px solid #d7e2db;border-radius:20px;padding:24px;margin:20px 0}.modes{display:flex;gap:8px;border:0;padding:0;margin:24px 0}.modes legend{margin-bottom:10px}.modes label{flex:1;text-align:center;border:1px solid #b6c9c1;border-radius:12px;padding:14px 4px;cursor:pointer}.modes label:has(input:checked){background:#e1efe6;border-color:#27654b;font-weight:700}.modes input{accent-color:#27654b}.hold{width:100%;min-height:132px;background:#245e46;color:#fff;border:0;border-radius:20px;font-size:25px;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}.hold.active{background:#a43932}.status{min-height:28px;margin:16px 0 0;font-weight:600}.lights{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:24px}.light{background:#eef3ef;padding:14px 8px;border-radius:12px;text-align:center}.light.on{background:#fff0b9}.light strong,.light span{display:block}.light span{margin-top:6px;color:#52635a;font-size:15px}video,img{width:100%;max-height:320px;object-fit:contain;border-radius:12px;background:#163228;margin-top:16px}.log{list-style:none;padding:0;margin:0;max-height:350px;overflow:auto}.log li{border-bottom:1px solid #e2e9e4;padding:14px 0;line-height:1.6;white-space:pre-wrap}.log li:last-child{border-bottom:0}.log .error,.log .timeout{color:#982b2b}.log .warning,.log .partial{color:#795500}audio{width:100%;margin-top:18px}.audio-note{font-size:14px;color:#566e63;min-height:22px}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.admin-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}.admin-device{padding:16px;background:#f2f6f3;border-radius:12px}select,input[type=password],input[type=text]{display:block;width:100%;padding:12px;border-radius:10px;border:1px solid #aebfb4;margin:10px 0}.admin-log{font:14px/1.6 ui-monospace,monospace;max-height:350px;overflow:auto;white-space:pre-wrap}dialog{border:1px solid #b6c9c1;border-radius:20px;padding:26px;width:min(420px,90vw)}dialog::backdrop{background:#132d2470}[hidden]{display:none!important}@media(max-width:480px){main{padding:20px 14px}.card{padding:20px}.light{font-size:15px}.modes{gap:6px}.modes label{font-size:16px}}
+</style>
+</head>
+<body><main>
+<header><span class="brand">Assistive IoE</span><button id="admin-open">Admin</button></header>
+<section id="user-view">
+<h1>How can I help?</h1><p class="muted">Choose your input. Hold to capture, then release to send.</p>
+<fieldset class="modes"><legend>Input</legend>
+<label><input type="radio" name="mode" value="audio" checked> Audio</label>
+<label><input type="radio" name="mode" value="video"> Video</label>
+<label><input type="radio" name="mode" value="both"> Both</label>
+</fieldset>
+<button id="hold" class="hold" aria-label="Hold to speak">Hold to speak</button>
+<p id="capture-status" class="status" role="status">Ready</p>
+<p id="video-note" class="muted" hidden>Video preview is available. Gesture recognition will be connected in a later stage.</p>
+<video id="local-preview" autoplay muted playsinline hidden></video>
+<div id="lights" class="lights" aria-label="Confirmed light states"></div>
+<section class="card"><h2>System feedback</h2><ul id="feedback-log" class="log" aria-live="polite"><li class="muted">Your assistant’s replies will appear here.</li></ul>
+<audio id="reply-audio" controls aria-label="Assistant voice reply"></audio>
+<div class="row"><button id="replay" hidden>Replay last reply</button><span id="audio-status" class="audio-note"></span></div>
+</section>
+</section>
+<section id="admin-view" hidden>
+<div class="row"><h1>System monitor</h1><button id="admin-back">User interface</button><button id="admin-logout">Log out</button></div>
+<p id="admin-health" class="muted"></p>
+<section class="card"><h2>Arduino simulator</h2><p class="muted">Choose the feedback each simulated controller returns.</p><div id="admin-devices" class="admin-grid"></div></section>
+<section class="card"><h2>Live input</h2><p id="admin-media"></p><img id="admin-preview" alt="Live video at the gateway" hidden><p id="admin-transcript"></p><p id="admin-progress"></p></section>
+<section class="card"><h2>Test a request</h2><form id="admin-command"><label for="test-text">Natural-language request</label><input id="test-text" type="text" placeholder="Turn on the kitchen and bedroom lights"><button>Send</button></form></section>
+<section class="card"><h2>Events</h2><div id="admin-events" class="admin-log"></div></section>
+</section>
+<dialog id="admin-dialog"><form id="admin-login"><h2>Admin login</h2><label for="admin-password">Password</label><input id="admin-password" type="password" autocomplete="current-password" required><p id="admin-error" role="alert"></p><div class="row"><button type="submit">Log in</button><button id="admin-cancel" type="button">Cancel</button></div></form></dialog>
+</main><script src="/system.js"></script></body></html>

@@ -20,6 +20,7 @@ from av import AudioResampler
 from pydantic import ValidationError
 
 from gateway.config import control_token, load_settings
+from gateway.access import Access, USER_COOKIE, CLIENT, ADMIN
 from gateway.runtime import SystemRuntime
 
 ROOT = Path(__file__).resolve().parent
@@ -27,6 +28,7 @@ ROOT = Path(__file__).resolve().parent
 
 class Receiver:
     def __init__(self):
+        self.client_id = None
         self.peer = None
         self.session = None
         self.tasks = set()
@@ -53,6 +55,7 @@ class Receiver:
     async def close(self):
         peer, self.peer = self.peer, None
         self.session = None
+        self.client_id = None
         if peer is not None:
             await peer.close()
         tasks = list(self.tasks)
@@ -141,16 +144,14 @@ class Receiver:
 
 
 RECEIVER = web.AppKey("receiver", Receiver)
-PAIRING_CODE = web.AppKey("pairing_code", str)
 EXPIRY_TASKS = web.AppKey("expiry_tasks", set)
 SYSTEM = web.AppKey("system", SystemRuntime)
 
 
-def create_app(token=None, system=False):
-    token = token or f"{secrets.randbelow(1000000):06d}"
+def create_app(system=False):
     receiver = Receiver()
     runtime = SystemRuntime(receiver, load_settings(), control_token()) if system else None
-    failures = {}
+    access = Access()
 
     @web.middleware
     async def headers(request, handler):
@@ -159,38 +160,41 @@ def create_app(token=None, system=False):
                 raise web.HTTPForbidden()
             if not hmac.compare_digest(request.headers.get("Authorization", "").encode(), ("Bearer " + runtime.token).encode()):
                 raise web.HTTPUnauthorized()
-        if request.path.startswith("/api/"):
-            now, address = time.monotonic(), request.remote
-            # Short numeric codes need a bound on guessing attempts.
-            for key in list(failures):
-                if now - failures[key][-1] >= 60:
-                    del failures[key]
-            attempts = failures.get(address, deque())
-            while attempts and now - attempts[0] >= 60:
-                attempts.popleft()
-            if len(attempts) >= 10:
-                raise web.HTTPTooManyRequests(text="Too many incorrect codes. Wait one minute and try again.",
-                                             headers={"Retry-After": "60"})
-            if not hmac.compare_digest(request.headers.get("Authorization", "").encode(), ("Bearer " + token).encode()):
-                if address not in failures and len(failures) >= 1024:
-                    del failures[next(iter(failures))]
-                attempts.append(now)
-                failures[address] = attempts
-                raise web.HTTPUnauthorized(text="Enter the gateway pairing code.")
+        client = request.cookies.get(USER_COOKIE, '')
+        if len(client) != 32 or not all(character.isalnum() or character in '-_' for character in client):
+            client = secrets.token_urlsafe(24)
+        request[CLIENT] = client
+        request[ADMIN] = access.is_admin(request)
+        admin_paths = {'/api/system', '/api/mock', '/api/recognition', '/api/status',
+                       '/api/frame.jpg', '/api/audio.wav', '/api/speech/test'}
+        if request.path in admin_paths and not request[ADMIN]:
+            raise web.HTTPUnauthorized(text='Admin login required.')
+        if request.path.startswith('/api/') and request.method != 'GET':
+            origin = request.headers.get('Origin')
+            if origin and origin != f'{request.scheme}://{request.host}':
+                raise web.HTTPForbidden(text='Use the app from this gateway URL.')
         try:
             response = await handler(request)
         except ValidationError as error:
             raise web.HTTPBadRequest(text=str(error.errors(include_input=False)))
         except (ValueError, KeyError) as error:
             raise web.HTTPBadRequest(text=str(error))
+        if request.cookies.get(USER_COOKIE) != client:
+            response.set_cookie(USER_COOKIE, client, httponly=True, samesite='Strict',
+                                secure=request.secure, max_age=24 * 3600)
         response.headers["Cache-Control"] = "no-store"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Permissions-Policy"] = "camera=(self), microphone=(self)"
         return response
 
-    app = web.Application(middlewares=[headers], client_max_size=256 * 1024)
+    app = web.Application(middlewares=[headers], client_max_size=8 * 1024 * 1024)
     app[RECEIVER] = receiver
-    app[PAIRING_CODE] = token
+    app.router.add_post("/api/admin/login", access.login)
+    app.router.add_post("/api/admin/logout", access.logout)
+    async def admin_status(request):
+        return web.json_response({"admin": request[ADMIN]})
+
+    app.router.add_get("/api/admin", admin_status)
     if runtime:
         app[SYSTEM] = runtime
         runtime.register(app)
@@ -223,6 +227,7 @@ def create_app(token=None, system=False):
             peer = RTCPeerConnection(RTCConfiguration(iceServers=[]))
             receiver.peer = peer
             receiver.session = secrets.token_urlsafe(12)
+            receiver.client_id = request[CLIENT]
 
             @peer.on("track")
             def track_received(track):
@@ -282,7 +287,7 @@ def create_app(token=None, system=False):
     async def stop(request):
         params = await request.json()
         async with receiver.lock:
-            if params.get("session") != receiver.session:
+            if params.get("session") != receiver.session or request[CLIENT] != receiver.client_id:
                 raise web.HTTPConflict(text="That session has already ended.")
             await receiver.close()
         return web.Response(status=204)
@@ -328,7 +333,7 @@ if __name__ == "__main__":
     elif args.host not in ("127.0.0.1", "localhost", "::1"):
         parser.error("Phone access over Wi-Fi requires --cert and --key for HTTPS.")
     app = create_app(system=args.system)
-    print("Gateway pairing code:", app[PAIRING_CODE], flush=True)
+
     async def serve():
         runner = web.AppRunner(app, access_log=None)
         await runner.setup()
