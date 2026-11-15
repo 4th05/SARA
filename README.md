@@ -13,7 +13,7 @@ success, warning, error, and timeout behavior is selectable in the web interface
 From the IoE folder:
 
 ```sh
-./tools/start_system.sh
+make ui
 ```
 
 The launcher starts/reuses Ollama and Node-RED and prints the phone HTTPS URL.
@@ -66,7 +66,15 @@ room's actual result. Physical MCU and Raspberry Pi testing remain outstanding.
 
 Local desktop UI is at http://localhost:8080/ and the workflow editor is at
 http://localhost:1880/. Phones use the HTTPS URL printed by the launcher.
-Ctrl+C closes the gateway and services started by the launcher.
+The command stays open and displays service logs. To close the gateway, Node-RED,
+Ollama, and their worker processes, run this in another terminal:
+
+```sh
+make stop_ui
+```
+
+This also stops project services left running after a previous launch. Ctrl+C
+closes the gateway and services started by that launch.
 
 ## Workflow
 
@@ -123,7 +131,7 @@ recognition, gesture recognition, neural voice, and LLM models.
 For localhost-only testing:
 
 ```sh
-./tools/start_system.sh --http-only
+make ui UI_ARGS=--http-only
 ```
 
 Use Firefox on the Pi to open the local monitor/editor addresses above.

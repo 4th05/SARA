@@ -3,7 +3,7 @@
 Run the complete application from the repository root with:
 
 ```sh
-./tools/start_system.sh
+make ui
 ```
 
 Open http://localhost:1880/ to see the **IoE workflow** graph. The web monitor at

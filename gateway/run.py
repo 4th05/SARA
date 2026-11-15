@@ -4,6 +4,7 @@ import asyncio
 import os
 from pathlib import Path
 import shutil
+import signal
 import socket
 import ssl
 import subprocess
@@ -26,7 +27,7 @@ async def reachable(client, url, token):
 async def ensure_service(client, url, command, token, children, environment):
     if await reachable(client, url, token):
         return
-    child = subprocess.Popen(command, cwd=PROJECT, env=environment)
+    child = subprocess.Popen(command, cwd=PROJECT, env=environment, start_new_session=True)
     children.append(child)
     for _ in range(80):
         if child.poll() is not None:
@@ -51,6 +52,7 @@ async def serve(http_only=False):
     token = control_token()
     children = []
     runner = None
+    asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, asyncio.current_task().cancel)
     environment = {**os.environ, "OLLAMA_MODELS": str(LOCAL / "ollama/models"),
                    "OLLAMA_HOST": "127.0.0.1:11434", "LANGSMITH_TRACING": "false",
                    "MPLCONFIGDIR": str(LOCAL / "matplotlib"), "HF_HOME": str(LOCAL / "models/huggingface")}
@@ -91,13 +93,34 @@ async def serve(http_only=False):
         if runner:
             await runner.cleanup()
         for child in reversed(children):
-            if child.poll() is None:
-                child.terminate()
+            try:
+                os.killpg(child.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                await asyncio.to_thread(child.wait)
+                continue
+            except PermissionError:
+                if child.poll() is None:
+                    raise
+                continue
+            # A wrapper can exit before its workers. Wait for the whole group.
+            deadline = asyncio.get_running_loop().time() + 5
+            while asyncio.get_running_loop().time() < deadline:
+                child.poll()
                 try:
-                    await asyncio.to_thread(child.wait, timeout=5)
-                except subprocess.TimeoutExpired:
-                    child.kill()
-                    await asyncio.to_thread(child.wait)
+                    os.killpg(child.pid, 0)
+                except ProcessLookupError:
+                    break
+                except PermissionError:
+                    if child.poll() is None:
+                        raise
+                    break
+                await asyncio.sleep(0.1)
+            else:
+                try:
+                    os.killpg(child.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            await asyncio.to_thread(child.wait)
 
 
 def main():
@@ -106,7 +129,7 @@ def main():
     args = parser.parse_args()
     try:
         asyncio.run(serve(args.http_only))
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, asyncio.CancelledError):
         pass
     except (OSError, RuntimeError) as error:
         parser.exit(1, f"Startup failed: {error}\n")

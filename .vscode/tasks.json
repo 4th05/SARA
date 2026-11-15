@@ -4,12 +4,22 @@
     {
       "label": "Start IoE system",
       "type": "process",
-      "command": "${workspaceFolder}/tools/start_system.sh",
+      "command": "make",
+      "args": ["ui"],
+      "options": {"cwd": "${workspaceFolder}"},
       "problemMatcher": [],
       "presentation": {
         "reveal": "always",
         "panel": "dedicated"
       }
+    },
+    {
+      "label": "Stop IoE system",
+      "type": "process",
+      "command": "make",
+      "args": ["stop_ui"],
+      "options": {"cwd": "${workspaceFolder}"},
+      "problemMatcher": []
     },
     {
       "label": "Start Node-RED editor",
