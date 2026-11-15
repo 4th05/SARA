@@ -19,7 +19,7 @@ make ui
 The launcher starts/reuses Ollama and Node-RED and prints the phone HTTPS URL.
 Open that URL on the phone. User access is password-free.
 
-Choose **Audio**, **Video**, or **Both**. Hold the large capture button and release
+Select **Audio**, **Video**, or both. Hold the capture button and release
 it when finished. Allow browser microphone/camera permission when prompted. If
 permission completes after release, hold again to start the recording. Capture
 is limited to 15 seconds. Audio is recorded in the browser and submitted on
@@ -39,13 +39,13 @@ lights on”, “make the cooking area brighter and leave the bedroom dark”, o
 mixed room commands. Interpretation uses the LLM prompt and structured output.
 Ambiguous or contradictory requests should ask for clarification.
 
-For gestures, choose **Video** or **Both**, hold the capture button, and show a
+For gestures, select **Video**, hold the capture button, and show a
 **thumbs-up** to turn all three lights on or **thumbs-down** to turn them off.
 Keep the hand visible and steady for about a second, then release. MediaPipe's
 pretrained model must agree across three frames at 70% confidence or higher.
 One gesture is accepted per recording. Its label goes through Ollama and the
 same Node-RED/state/spoken-feedback workflow as speech. Releasing the camera
-does not cancel an accepted request. In **Both**, speech is also processed on release.
+does not cancel an accepted request. With **Audio** also selected, speech is processed on release.
 
 For monitoring, click **Admin** on the same page and log in with `admin`.
 The password is configured with `ADMIN_PASSWORD` in the root `.env` file and is

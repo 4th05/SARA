@@ -41,17 +41,17 @@
     return response;
   }
   async function json(path, body, options) { return (await request(path, body, options)).json(); }
-  const mode = () => document.querySelector('input[name=mode]:checked').value;
-  const label = () => mode() === 'audio' ? 'Hold to speak' : mode() === 'video' ? 'Hold for video' : 'Hold to speak & record';
+  const selectedInputs = () => ({audio: element('input-audio').checked, video: element('input-video').checked});
   const status = text => { element('capture-status').textContent = text; };
 
   function updateControls() {
-    hold.textContent = held ? 'Release to send' : label();
+    const selected = selectedInputs();
+    hold.textContent = held ? 'Release to send' : 'Hold to capture';
     hold.setAttribute('aria-label', hold.textContent);
     hold.classList.toggle('active', held);
-    hold.disabled = !held && (closing || waiting || serverBusy || playing);
+    hold.disabled = !held && ((!selected.audio && !selected.video) || closing || waiting || serverBusy || playing);
     for (const input of document.querySelectorAll('input[name=mode]')) input.disabled = held || closing || !!capture;
-    element('video-note').hidden = mode() === 'audio';
+    element('video-note').hidden = !selected.video;
   }
   document.querySelectorAll('input[name=mode]').forEach(input => input.onchange = updateControls);
 
@@ -170,10 +170,11 @@
 
   async function beginCapture() {
     if (capture || closing || waiting || serverBusy || playing || admin) return;
+    const selected = selectedInputs();
+    if (!selected.audio && !selected.video) return;
     held = true;
     unlockAudio();
-    const selected = mode();
-    const captured = {audio: selected !== 'video', video: selected !== 'audio', stopped: false};
+    const captured = {...selected, stopped: false};
     capture = captured;
     updateControls();
     status('Opening media…');
