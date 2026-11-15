@@ -9,7 +9,7 @@ from aiohttp import ClientError, ClientSession, ClientTimeout, web
 from gateway.contracts import (Decision, DeviceCommand, Feedback,
                                FeedbackBatch, InputEvent, MockSetting, RecognitionSetting)
 from gateway.devices.mock import MockDevices
-from gateway.recognition.gesture import GestureRecognizer
+from gateway.recognition.gesture import GestureRecognizer, MIN_GESTURE_CONFIDENCE
 from gateway.recognition.intent import IntentService
 from gateway.recognition.speech import SpeechBuffer, SpeechRecognizer, decode_recording
 from gateway.state import SystemState
@@ -32,6 +32,8 @@ class SystemRuntime:
         self.speech_output = SpeechOutput()
         self.audio_queue = asyncio.Queue(maxsize=2)
         self.video_queue = asyncio.Queue(maxsize=1)
+        self.video_captures = OrderedDict()
+        self.gesture_jobs = {}
         self.requests = OrderedDict()
         self.tasks = []
         self.client = None
@@ -56,7 +58,7 @@ class SystemRuntime:
 
     async def close(self):
         self.receiver.on_audio = self.receiver.on_video = self.receiver.on_reset = None
-        tasks = self.tasks + [task for _, task in self.requests.values() if not task.done()]
+        tasks = self.tasks + list(self.gesture_jobs) + [task for _, task in self.requests.values() if not task.done()]
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -148,9 +150,17 @@ class SystemRuntime:
             self.audio_queue.put_nowait((self.receiver.session, utterance))
 
     def feed_video(self, frame):
+        session, owner = self.receiver.session, self.receiver.client_id
+        if not session or not owner:
+            return
+        if session not in self.video_captures:
+            self.video_captures[session] = {'owner': owner, 'status': 'watching', 'job': None}
+            if len(self.video_captures) > 200:
+                self.video_captures.popitem(last=False)
         now = time.monotonic()
-        if self.recognition.gesture_enabled and now - self.last_video_at >= 0.3 and not self.video_queue.full():
-            self.video_queue.put_nowait((self.receiver.session, frame))
+        if (self.recognition.gesture_enabled and self.video_captures[session]['status'] == 'watching'
+                and now - self.last_video_at >= 0.3 and not self.video_queue.full()):
+            self.video_queue.put_nowait((session, owner, frame))
             self.last_video_at = now
 
     async def voice_worker(self):
@@ -177,31 +187,47 @@ class SystemRuntime:
                 self.audio_queue.task_done()
 
     async def gesture_worker(self):
-        candidate, repeats, latched, current_session = None, 0, None, None
+        candidate, repeats, current_session = None, 0, None
         while True:
-            session, frame = await self.video_queue.get()
+            session, owner, frame = await self.video_queue.get()
             try:
-                if session != self.receiver.session or not self.recognition.gesture_enabled:
+                captured = self.video_captures.get(session)
+                if not captured or captured['status'] != 'watching' or not self.recognition.gesture_enabled:
                     continue
                 if session != current_session:
-                    candidate, repeats, latched, current_session = None, 0, None, session
+                    candidate, repeats, current_session = None, 0, session
                 label, confidence = await asyncio.to_thread(self.gestures.recognize, frame,
                                                             time.monotonic_ns() // 1_000_000)
                 self.last_gesture = f"{label or 'No hand'} ({confidence:.0%})"
-                if label not in ("Open_Palm", "Closed_Fist") or confidence < 0.8:
-                    candidate, repeats, latched = None, 0, None
+                if label not in ("Thumb_Up", "Thumb_Down") or confidence < MIN_GESTURE_CONFIDENCE:
+                    candidate, repeats = None, 0
                     continue
                 repeats = repeats + 1 if label == candidate else 1
                 candidate = label
-                if repeats >= 3 and latched != label and session == self.receiver.session:
-                    latched = label
-                    await self.submit(InputEvent(request_id=str(uuid.uuid4()), conversation_id=session or "gesture",
-                                                 source="gesture", text=label, confidence=confidence))
+                if repeats >= 3:
+                    # Accept one stable gesture per hold. Its workflow survives camera release.
+                    captured['status'] = 'accepted'
+                    event = InputEvent(request_id=str(uuid.uuid4()), conversation_id=owner,
+                                       source="gesture", text=label, confidence=confidence)
+                    job = asyncio.create_task(self.process_gesture(event))
+                    captured['job'] = job
+                    self.gesture_jobs[job] = owner
+                    job.add_done_callback(lambda done: self.gesture_jobs.pop(done, None))
             except Exception as error:
                 self.recognition.gesture_enabled = False
-                self.state.event("error", f"Gesture processing stopped: {error}")
+                if captured:
+                    captured['status'] = 'error'
+                self.state.event("error", f"Gesture processing stopped: {error}", speak=True,
+                                 language='en', conversation_id=owner)
             finally:
                 self.video_queue.task_done()
+
+    async def process_gesture(self, event):
+        try:
+            await self.submit(event)
+        except Exception as error:
+            self.state.event('error', f'Gesture request failed: {error}', speak=True,
+                             language='en', conversation_id=event.conversation_id)
 
     async def watchdog(self):
         while True:
@@ -234,14 +260,31 @@ class SystemRuntime:
                 'devices': {name: self.state.devices[name] for name in ('bathroom', 'kitchen', 'bedroom')},
                 'events': [event for event in self.state.events if event.get('speak')
                            and event.get('conversation_id') == client],
-                'busy': client in self.processing,
+                'busy': client in self.processing or client in self.gesture_jobs.values(),
                 'recording': self.recording is not None and self.recording[0] == client,
             })
 
         async def video_complete(request):
-            self.state.event('reply', 'Video capture finished. Gesture recognition is not enabled in this stage.',
-                             speak=True, language='en', conversation_id=request[CLIENT])
-            return web.json_response({'status': 'captured'})
+            params = await request.json()
+            session = params.get('session')
+            if not isinstance(session, str) or not 1 <= len(session) <= 128:
+                raise ValueError('A camera session is required.')
+            captured = self.video_captures.get(session)
+            if captured and captured['owner'] != request[CLIENT]:
+                raise web.HTTPNotFound()
+            # Finish classification of the last captured frames, without waiting for the LLM.
+            await self.video_queue.join()
+            if captured and captured['status'] == 'accepted':
+                return web.json_response({'status': 'processing' if not captured['job'].done() else 'complete'})
+            if captured and captured['status'] in ('error', 'unrecognized'):
+                return web.json_response({'status': captured['status']})
+            if captured:
+                captured['status'] = 'unrecognized'
+            if params.get('notify', True):
+                message = ('I did not recognize a thumbs-up or thumbs-down. Hold your hand steady for about a second and try again.'
+                           if self.recognition.gesture_enabled else 'Gesture recognition is unavailable. Please use audio or ask the administrator to check it.')
+                self.state.event('clarify', message, speak=True, language='en', conversation_id=request[CLIENT])
+            return web.json_response({'status': 'unrecognized'})
 
         async def submit(request):
             params = await request.json()

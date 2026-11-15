@@ -2,6 +2,8 @@
 from gateway.config import LOCAL
 from threading import Lock
 
+MIN_GESTURE_CONFIDENCE = 0.7
+
 
 class GestureRecognizer:
     def __init__(self):

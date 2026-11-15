@@ -82,7 +82,7 @@ class MockSetting(Message):
 class RecognitionSetting(Message):
     voice_mode: Literal["manual", "automatic"] = "manual"
     voice_enabled: bool = True
-    gesture_enabled: bool = False
+    gesture_enabled: bool = True
 
 
 class CommandBatch(Message):

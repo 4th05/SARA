@@ -78,7 +78,7 @@ class Receiver:
                     self.updated = now
                     if self.on_video:
                         self.on_video(frame)
-                    # Future gesture inference consumes the original frame here.
+                    # Gesture inference consumes the original frame through on_video.
                     # JPEG is only the gateway's monitoring preview.
                     if now - self.preview_at >= 0.1:
                         self.jpeg = await asyncio.to_thread(self.preview, frame)

@@ -29,8 +29,8 @@ class TestIntent:
             raise RuntimeError("Simulated interpreter failure")
         if event.text == "ambiguous":
             return Decision(kind="clarify", device=None, value=None, reply="Which device do you mean?")
-        if event.text in ("rooms on", "rooms off"):
-            actions = [Action(device=room, value=event.text == "rooms on") for room in ROOMS]
+        if event.text in ("rooms on", "rooms off", "Thumb_Up", "Thumb_Down"):
+            actions = [Action(device=room, value=event.text in ("rooms on", "Thumb_Up")) for room in ROOMS]
             return Decision(kind="command", actions=actions, reply="Request received.")
         return Decision(kind="command", device="lights", value=event.text != "off", reply="Request received.")
 
@@ -72,6 +72,19 @@ class StateTest(unittest.TestCase):
 
 
 class IntentValidationTest(unittest.IsolatedAsyncioTestCase):
+    async def test_gesture_label_reaches_llm_and_uses_its_plan(self):
+        class Model:
+            async def ainvoke(self, messages):
+                self.messages = messages
+                return LightPlan(bathroom=False, kitchen=False, bedroom=False, response_kind='reply',
+                                 reply='Model-selected actions.', language='en')
+        service = IntentService(load_settings())
+        service.structured = Model()
+        event = InputEvent(request_id='gesture-model', source='gesture', text='Thumb_Up', confidence=0.73)
+        result = await service.interpret(event, SystemState().snapshot())
+        self.assertEqual(service.structured.messages[-1], ('human', 'Recognized gesture: Thumb_Up'))
+        self.assertEqual(result.actions, [Action(device=room, value=False) for room in ROOMS])
+
     async def test_novel_wording_reaches_model_without_keyword_filter(self):
         class Model:
             async def ainvoke(self, messages):
@@ -253,6 +266,65 @@ class WorkflowTest(unittest.IsolatedAsyncioTestCase):
         data = await response.json()
         self.assertTrue(data['devices']['kitchen']['confirmed'])
         self.assertEqual(data['events'][-1]['kind'], 'success')
+
+    async def test_thumb_gestures_debounce_survive_release_and_return_owned_feedback(self):
+        owner = self.client.session.cookie_jar.filter_cookies(self.client.make_url('/'))['ioe_user'].value
+        await self.client.post('/api/admin/logout', json={})
+        for index, label in enumerate(('Thumb_Up', 'Thumb_Down')):
+            session = f'gesture-{index}'
+            self.runtime.receiver.session = session
+            self.runtime.receiver.client_id = owner
+            self.runtime.gestures.recognize = lambda frame, timestamp: (label, 0.95)
+            for _ in range(2):
+                self.runtime.last_video_at = 0
+                self.runtime.feed_video(None)
+                await self.runtime.video_queue.join()
+            self.assertEqual(self.intent.calls, index)
+            self.runtime.last_video_at = 0
+            self.runtime.feed_video(None)
+            # Release while the last frame is still queued/in inference.
+            await self.runtime.receiver.close()
+            response = await self.client.post('/api/video/complete', json={'session': session})
+            self.assertEqual(response.status, 200, await response.text())
+            await self.runtime.video_captures[session]['job']
+            # Completion is idempotent and cannot replay the accepted command.
+            await self.client.post('/api/video/complete', json={'session': session})
+            self.runtime.receiver.session = session
+            self.runtime.receiver.client_id = owner
+            self.runtime.last_video_at = 0
+            self.runtime.feed_video(None)
+            await self.runtime.video_queue.join()
+            self.assertEqual(self.intent.calls, index + 1)
+            for room in ROOMS:
+                self.assertEqual(self.runtime.state.devices[room]['confirmed'], label == 'Thumb_Up')
+            data = await (await self.client.get('/api/user')).json()
+            self.assertFalse(data['busy'])
+            self.assertEqual([event['kind'] for event in data['events']],
+                             ['acknowledgement', 'success'] * (index + 1))
+        async with ClientSession(cookie_jar=CookieJar(unsafe=True)) as other:
+            async with other.get(self.client.make_url('/api/user')) as response:
+                self.assertEqual((await response.json())['events'], [])
+            async with other.post(self.client.make_url('/api/video/complete'), json={'session': session}) as response:
+                self.assertEqual(response.status, 404)
+
+    async def test_unrecognized_video_returns_spoken_retry_without_commands(self):
+        owner = self.client.session.cookie_jar.filter_cookies(self.client.make_url('/'))['ioe_user'].value
+        self.runtime.receiver.session = 'unstable'
+        self.runtime.receiver.client_id = owner
+        for label, confidence in [('Open_Palm', 0.99), ('Thumb_Up', 0.65), ('Thumb_Up', 0.99),
+                                  ('Thumb_Down', 0.99), (None, 0)]:
+            self.runtime.gestures.recognize = lambda frame, timestamp: (label, confidence)
+            self.runtime.last_video_at = 0
+            self.runtime.feed_video(None)
+            await self.runtime.video_queue.join()
+        await self.runtime.receiver.close()
+        for _ in range(2):
+            response = await self.client.post('/api/video/complete', json={'session': 'unstable'})
+            self.assertEqual((await response.json())['status'], 'unrecognized')
+        data = await (await self.client.get('/api/user')).json()
+        self.assertEqual([event['kind'] for event in data['events']], ['clarify'])
+        self.assertTrue(data['events'][0]['speak'])
+        self.assertEqual(self.intent.calls, 0)
 
     async def test_manual_recording_waits_for_stop(self):
         self.runtime.speech.transcribe = lambda pcm: 'on'

@@ -37,8 +37,15 @@ final LLM summary is unavailable. This fallback is marked in admin events.
 The supported lights are **bathroom**, **kitchen**, and **bedroom**. Try “turn all
 lights on”, “make the cooking area brighter and leave the bedroom dark”, or
 mixed room commands. Interpretation uses the LLM prompt and structured output.
-Ambiguous or contradictory requests should ask for clarification. Video capture
-and preview are available; gesture classification remains deferred for this stage.
+Ambiguous or contradictory requests should ask for clarification.
+
+For gestures, choose **Video** or **Both**, hold the capture button, and show a
+**thumbs-up** to turn all three lights on or **thumbs-down** to turn them off.
+Keep the hand visible and steady for about a second, then release. MediaPipe's
+pretrained model must agree across three frames at 70% confidence or higher.
+One gesture is accepted per recording. Its label goes through Ollama and the
+same Node-RED/state/spoken-feedback workflow as speech. Releasing the camera
+does not cancel an accepted request. In **Both**, speech is also processed on release.
 
 For monitoring, click **Admin** on the same page and log in with `admin`.
 The password is configured with `ADMIN_PASSWORD` in the root `.env` file and is
@@ -91,7 +98,7 @@ runtime caches live under ignored local paths.
 - Speech output: Piper 1.8.0 neural voices, replayable WAV audio.
 - Orchestration: Node-RED 5.0.9, Node.js 24.
 - State/device/message handling: Python 3.12 and Pydantic.
-- Optional reference gestures: MediaPipe 1.2.0.
+- Gesture recognition uses MediaPipe 1.2.0 and its pretrained model. [Official model documentation](https://developers.google.com/edge/mediapipe/solutions/vision/gesture_recognizer).
 
 The explicit GGUF model tag supports schema-constrained output on the tested Mac
 and avoids its Homebrew MLX packaging error. Python validates every decision and
@@ -111,11 +118,7 @@ official installer. Clone the repository, then from its root:
 ```
 
 This installs pinned Python and Node-RED dependencies and downloads local speech
-recognition, neural voice, and LLM models. To include reference camera gesture detection:
-
-```sh
-./tools/setup.sh --with-gesture
-```
+recognition, gesture recognition, neural voice, and LLM models.
 
 For localhost-only testing:
 

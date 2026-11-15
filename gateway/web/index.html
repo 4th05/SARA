@@ -18,7 +18,7 @@
 </fieldset>
 <button id="hold" class="hold" aria-label="Hold to speak">Hold to speak</button>
 <p id="capture-status" class="status" role="status">Ready</p>
-<p id="video-note" class="muted" hidden>Video preview is available. Gesture recognition will be connected in a later stage.</p>
+<p id="video-note" class="muted" hidden>Thumbs up turns all lights on. Thumbs down turns them off. Hold your hand steady for about a second. One gesture per recording.</p>
 <video id="local-preview" autoplay muted playsinline hidden></video>
 <div id="lights" class="lights" aria-label="Confirmed light states"></div>
 <section class="card"><h2>System feedback</h2><ul id="feedback-log" class="log" aria-live="polite"><li class="muted">Your assistant’s replies will appear here.</li></ul>
@@ -30,7 +30,7 @@
 <div class="row"><h1>System monitor</h1><button id="admin-back">User interface</button><button id="admin-logout">Log out</button></div>
 <p id="admin-health" class="muted"></p>
 <section class="card"><h2>Arduino simulator</h2><p class="muted">Choose the feedback each simulated controller returns.</p><div id="admin-devices" class="admin-grid"></div></section>
-<section class="card"><h2>Live input</h2><p id="admin-media"></p><img id="admin-preview" alt="Live video at the gateway" hidden><p id="admin-transcript"></p><p id="admin-progress"></p></section>
+<section class="card"><h2>Live input</h2><p id="admin-media"></p><img id="admin-preview" alt="Live video at the gateway" hidden><p id="admin-transcript"></p><p id="admin-gesture"></p><p id="admin-progress"></p></section>
 <section class="card"><h2>Test a request</h2><form id="admin-command"><label for="test-text">Natural-language request</label><input id="test-text" type="text" placeholder="Turn on the kitchen and bedroom lights"><button>Send</button></form></section>
 <section class="card"><h2>Events</h2><div id="admin-events" class="admin-log"></div></section>
 </section>

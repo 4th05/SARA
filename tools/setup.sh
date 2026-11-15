@@ -22,7 +22,4 @@ if [ ! -x .venv/bin/python ]; then
 fi
 .venv/bin/python -m pip install -r gateway/requirements.txt
 npm --prefix orchestration/node-red ci
-if [ "${1:-}" = "--with-gesture" ]; then
-    .venv/bin/python -m pip install -r gateway/requirements-gesture.txt
-fi
 exec .venv/bin/python -m gateway.download_models "$@"

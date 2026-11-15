@@ -218,7 +218,7 @@
         element('local-preview').hidden = false;
       }
       captured.publishing = publish(captured).catch(error => { captured.publishError = error; });
-      status('Recording… release to send. Maximum 15 seconds.');
+      status(captured.video ? 'Hold your thumb up or down steadily. Release when finished.' : 'Recording… release to send. Maximum 15 seconds.');
       captureTimer = setTimeout(releaseCapture, 15000);
     } catch (error) {
       captured.error = error;
@@ -253,12 +253,16 @@
       }
       await captured.publishing;
       if (captured.session) {
-        await json('/api/session', {session: captured.session}, {method: 'DELETE'});
+        await request('/api/session', {session: captured.session}, {method: 'DELETE'});
       }
-      if (!captured.audio && captured.stream && !captured.error) {
+      if (captured.video && captured.stream && !captured.error) {
         if (captured.publishError) throw captured.publishError;
-        waiting = true;
-        await json('/api/video/complete', {});
+        if (!captured.session) throw Error('Camera connection was too short. Hold again for a few seconds.');
+        const result = await json('/api/video/complete', {session: captured.session, notify: !captured.audio});
+        if (!captured.audio) {
+          waiting = result.status === 'processing';
+          status(waiting ? 'Processing your gesture…' : 'Capture finished');
+        }
       }
       if (!captured.recording && captured.audio && !captured.error) status('Ready. Hold again to record.');
     } catch (error) {
@@ -338,6 +342,7 @@
     const data = await json('/api/system');
     element('admin-health').textContent = `${data.health.node_red ? 'Node-RED ready' : 'Node-RED unavailable'} · ${data.health.ollama ? 'Ollama ready' : 'Ollama unavailable'} · ${data.speech_output.backend} · ${data.health.model}`;
     element('admin-transcript').textContent = data.last_transcript ? 'Heard: ' + data.last_transcript : 'No transcript yet';
+    element('admin-gesture').textContent = data.last_gesture ? 'Gesture: ' + data.last_gesture : 'No gesture yet';
     element('admin-progress').textContent = data.voice_status;
     for (const room of Object.keys(rooms)) {
       const state = data.devices[room];

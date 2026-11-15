@@ -22,8 +22,9 @@ def online(url):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--with-gesture", action="store_true")
-    args = parser.parse_args()
+    parser.add_argument("--with-gesture", action="store_true",
+                        help="Compatibility option; gesture models are now installed by default.")
+    parser.parse_args()
     settings = load_settings()
     (LOCAL / "models").mkdir(parents=True, exist_ok=True)
     os.environ.setdefault("HF_HOME", str(LOCAL / "models/huggingface"))
@@ -53,12 +54,11 @@ def main():
 
         subprocess.run([sys.executable, "-m", "piper.download_voices", "--data-dir", str(VOICE_DIRECTORY),
                         *VOICE_NAMES.values()], check=True)
-        if args.with_gesture:
-            target = LOCAL / "models/gesture_recognizer.task"
-            if not target.exists():
-                url = "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task"
-                with urlopen(url, timeout=60) as response:
-                    target.write_bytes(response.read())
+        target = LOCAL / "models/gesture_recognizer.task"
+        if not target.exists():
+            url = "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task"
+            with urlopen(url, timeout=60) as response:
+                target.write_bytes(response.read())
         with urlopen(settings.ollama_url + "/api/tags", timeout=5) as response:
             models = json.load(response)
         selected = next(model for model in models["models"] if model["name"] == settings.ollama_model)
