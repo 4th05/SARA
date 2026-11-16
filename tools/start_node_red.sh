@@ -18,5 +18,9 @@ if [ "$node_supported" != "true" ]; then
     exit 1
 fi
 
+if [ "${1:-}" = "--check" ]; then
+    exit 0
+fi
+
 exec node "$project_dir/orchestration/node-red/node_modules/node-red/red.js" \
     --settings "$project_dir/orchestration/node-red/settings.js"

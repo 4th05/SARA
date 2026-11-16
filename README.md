@@ -12,7 +12,204 @@ Only the Arduino controllers are simulated. The light controller has separate
 **bathroom, kitchen, and bedroom** outputs. The existing water-pump output is also available. Their
 success, warning, error, and timeout behavior is selectable in the web interface.
 
-## Start on this Mac
+## Install on Linux
+
+The reference instructions use **Ubuntu 24.04 LTS, 64-bit**, on an x86-64 PC or
+an ARM64 machine such as a Raspberry Pi 5 running Ubuntu. Other glibc-based Linux
+distributions can use the same project commands after installing the prerequisite
+versions and equivalent native libraries. Python wheel resolution has been checked
+for both Linux architectures. A full installation on physical Ubuntu/Pi hardware
+is still pending validation.
+
+### Install system prerequisites
+
+On Ubuntu 24.04, install Git, Make, Python 3.12 with venv support, and the native
+libraries used by OpenCV and PortAudio.
+
+```sh
+sudo apt update
+sudo apt install -y git make curl ca-certificates zstd \
+  python3.12 python3.12-venv libgl1 libglib2.0-0t64 libportaudio2
+```
+
+Use **Python 3.12** for the project environment. If your Linux distribution uses
+another default Python version, install 3.12 with your package manager or uv.
+The following optional commands install uv and a separate Python 3.12 executable.
+
+```sh
+curl -LsSf https://astral.sh/uv/install.sh -o /tmp/uv-install.sh
+sh /tmp/uv-install.sh
+export PATH="$HOME/.local/bin:$PATH"
+uv python install 3.12
+```
+
+The project creates its own `.venv` later. [Python downloads](https://www.python.org/downloads/),
+[uv installation](https://docs.astral.sh/uv/getting-started/installation/),
+[uv Python installation](https://docs.astral.sh/uv/guides/install-python/).
+
+### Install Node.js 24 and npm
+
+SARA uses **Node.js 24.15 or newer within version 24**. On Ubuntu/Debian, the
+NodeSource repository provides the required Node.js branch, including npm.
+
+```sh
+curl -fsSL https://deb.nodesource.com/setup_24.x -o /tmp/nodesource_setup.sh
+sudo bash /tmp/nodesource_setup.sh
+sudo apt install -y nodejs
+node --version
+npm --version
+```
+
+For another Linux distribution, use its Node.js 24 package or the official
+Linux x64/ARM64 downloads. [NodeSource instructions](https://github.com/nodesource/distributions/blob/master/DEV_README.md),
+[Node.js downloads](https://nodejs.org/en/download),
+[Node.js 24 release files](https://nodejs.org/dist/latest-v24.x/).
+
+### Install and configure Ollama
+
+Install the Ollama Linux executable using its official installer.
+
+```sh
+curl -fsSL https://ollama.com/install.sh -o /tmp/ollama-install.sh
+sh /tmp/ollama-install.sh
+command -v ollama
+```
+
+On Ubuntu with systemd, the installer creates an Ollama background service.
+Disable that automatic service so SARA can own its Ollama process, model location,
+and shutdown lifecycle.
+
+```sh
+sudo systemctl disable --now ollama
+```
+
+Run SARA's Make commands as your normal user. Its launcher sets `OLLAMA_MODELS`
+to the repository's `.local/ollama/models` and binds Ollama to `127.0.0.1:11434`.
+This lets `make stop_ui` close the services it uses. An already running server
+uses the model storage configured for that server. [Ollama Linux installation](https://docs.ollama.com/linux),
+[Ollama model storage configuration](https://docs.ollama.com/faq#where-are-models-stored).
+
+### Download the project and install its dependencies
+
+Clone the repository below. For an existing checkout, open its SARA directory
+and run `make setup`.
+
+```sh
+git clone https://github.com/4th05/SARA.git SARA
+cd SARA
+make setup
+```
+
+`make setup` checks prerequisites, creates `.venv`, installs the pinned Python
+packages, installs the project's Node-RED workspace with `npm ci`, copies
+`.env.example` to `.env` if needed, and downloads all default AI models.
+It temporarily starts Ollama when needed for the model download and closes that
+temporary process afterwards. Internet access is used for package/model downloads.
+
+| Component | Installation/download process | Local location |
+|---|---|---|
+| Python packages, including LangChain, aiortc, MediaPipe, faster-whisper, and Piper | `make setup` reads `gateway/requirements.txt` | `.venv/` |
+| Node-RED 5.0.9 | `make setup` reads the npm lockfile | `orchestration/node-red/node_modules/` |
+| Qwen LLM, `qwen3.5:2b-q4_K_M` | `make setup` runs `ollama pull` for the configured tag | `.local/ollama/models/` |
+| Whisper `tiny` | `make setup` uses faster-whisper's model downloader | `.local/models/models--Systran--faster-whisper-tiny/` |
+| MediaPipe Gesture Recognizer | `make setup` downloads `gesture_recognizer.task` | `.local/models/gesture_recognizer.task` |
+| Piper English voice | `make setup` downloads `en_US-lessac-medium.onnx` and `en_US-lessac-medium.onnx.json` | `.local/models/piper/` |
+| Piper Portuguese voice | `make setup` downloads `pt_BR-faber-medium.onnx` and `pt_BR-faber-medium.onnx.json` | `.local/models/piper/` |
+| Notebook kernel and examples | `make notebooks` after setup | `.venv/` |
+
+The selected LLM download is about 1.9 GB. Package and other model downloads
+consume additional disk space. The model loaders use the files in the locations
+above. To retry an interrupted model download after installing dependencies, run
+`make models`.
+
+The model and runtime sources are available from their publishers.
+
+- [Node-RED installation](https://nodered.org/docs/getting-started/local).
+- [Qwen model and exact Ollama tag](https://ollama.com/library/qwen3.5:2b-q4_K_M).
+- [faster-whisper](https://github.com/SYSTRAN/faster-whisper) and
+  [Whisper tiny model files](https://huggingface.co/Systran/faster-whisper-tiny).
+- [MediaPipe model documentation](https://developers.google.com/edge/mediapipe/solutions/vision/gesture_recognizer) and
+  [gesture model file](https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task).
+- [Piper installation](https://github.com/OHF-Voice/piper1-gpl),
+  [English voice files](https://huggingface.co/rhasspy/piper-voices/tree/main/en/en_US/lessac/medium), and
+  [Portuguese voice files](https://huggingface.co/rhasspy/piper-voices/tree/main/pt/pt_BR/faber/medium).
+
+### Configure the app
+
+Default settings are in `config/settings.json`. Machine-specific overrides go
+in `.local/settings.json`. The selected LLM tag is the `ollama_model` setting.
+After changing that tag, run `make models` to download the selected model.
+
+The admin password is `ADMIN_PASSWORD` in `.env`, initially `admin`.
+Models, `.env`, credentials, and runtime caches are ignored by Git.
+Node-RED's workflow is already included in `orchestration/node-red/flows.json`.
+The launcher opens this workspace automatically.
+
+### Configure phone HTTPS
+
+The gateway serves the web app. A phone opens its HTTPS URL to provide the camera
+and microphone. Find the Linux gateway's LAN IP with `hostname -I`, then use that
+address for the certificate. Replace the example `192.168.1.50` below with your
+actual address.
+
+```sh
+hostname -I
+make cert GATEWAY_HOST=192.168.1.50
+```
+
+This creates the following files.
+
+| File | Purpose |
+|---|---|
+| `.local/tls/development-ca.crt` | Public local CA certificate to transfer to the test phone |
+| `.local/tls/gateway.crt` | Server certificate loaded by SARA |
+| `.local/tls/gateway.key` | Private server key kept on the gateway |
+
+Install the public CA certificate as a trusted CA on the phone. On iOS, enable
+full trust for the installed certificate profile. Follow the device's certificate
+settings and then open `https://YOUR_GATEWAY_IP:8443/`.
+[Android certificate settings](https://support.google.com/pixelphone/answer/2844832),
+[iOS certificate trust](https://support.apple.com/en-us/102390).
+
+Certificates expire after 30 days. To regenerate them for expiry or a new IP,
+archive the previous files and create a new certificate, then install the new
+public CA on the phone.
+
+```sh
+mv .local/tls ".local/tls-$(date +%Y%m%d-%H%M%S)"
+make cert GATEWAY_HOST=192.168.1.50
+```
+
+The phone and gateway need a LAN that allows traffic between them. SARA uses
+TCP 8443 for phone HTTPS and negotiated UDP ports for WebRTC media. Permit these
+between the phone and gateway if a firewall is enabled. The local UI uses TCP
+8080, Node-RED TCP 1880, and Ollama TCP 11434 on loopback.
+
+### Verify the installation
+
+Start `make ui`, open `http://localhost:8080/` in Firefox or Chromium, and check
+Admin for Node-RED, Ollama, and voice readiness. Open the printed HTTPS URL on
+the phone, allow camera/microphone access, and test a short request.
+For an initial localhost check before setting up phone HTTPS, use
+`make ui UI_ARGS=--http-only`. Stop the system with `make stop_ui`.
+[Firefox installation on Linux](https://support.mozilla.org/en-US/kb/install-firefox-linux).
+
+| Setup problem | Action |
+|---|---|
+| Python version or venv error | Install Python 3.12 and its venv package, or use the uv steps above |
+| Node.js version error | Install Node.js 24.15+ within version 24 |
+| `libGL.so.1` or PortAudio import error | Install the Ubuntu native libraries listed above, or their distro equivalents |
+| Ollama port 11434 remains occupied | Stop the systemd Ollama service with `sudo systemctl disable --now ollama`, then start SARA |
+| Missing model | Run `make models` after setup |
+| Phone camera/microphone unavailable | Check trusted HTTPS, the certificate's LAN IP, browser permissions, and LAN/firewall access |
+
+The Node-RED workspace overrides `body-parser`, `multer`, and npm versions to
+apply security updates. The 2026-11-16 scan found no known Python vulnerabilities
+or high/critical Node dependency alerts. npm's bundled `glob` and `minimatch`
+still produce 24 moderate alerts. [glob advisory](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4),
+[minimatch advisory](https://github.com/advisories/GHSA-g3hv-75wg-m249).
+
+## Run and use SARA
 
 From the SARA folder:
 
@@ -112,59 +309,10 @@ runtime caches live under ignored local paths.
 - State/device/message handling: Python 3.12 and Pydantic.
 - Gesture recognition uses MediaPipe 1.2.0 and its pretrained model. [Official model documentation](https://developers.google.com/edge/mediapipe/solutions/vision/gesture_recognizer).
 
-The explicit GGUF model tag supports schema-constrained output on the tested Mac
-and avoids its Homebrew MLX packaging error. Python validates every decision and
-checks command targets and feedback against the message contracts. Invalid inference or unavailable
-services produce errors/clarification. Model interpretation still requires
-application-specific accuracy and latency evaluation before physical deployment.
-The model and speech/gesture services share CPU/RAM on the Pi; Pi performance
-has yet to be measured.
-
-## Install on another Mac or Ubuntu Raspberry Pi
-
-Install Python 3.12 with venv support, Node.js 24.15 or newer within version 24, npm, Git, and Ollama from its
-official installer. Clone the repository, then from its root:
-
-```sh
-./tools/setup.sh
-```
-
-This installs pinned Python and Node-RED dependencies and downloads local speech
-recognition, gesture recognition, neural voice, and LLM models.
-The Node-RED workspace overrides `body-parser`, `multer`, and npm versions to
-apply security updates. Normal startup runs Node-RED directly with Node.js.
-The 2026-11-16 dependency scan found no known Python vulnerabilities or high/critical
-Node dependency alerts. npm's bundled `glob` and `minimatch` still produce 24
-moderate alerts. Track their upstream fixes when updating the lockfile.
-[glob advisory](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4),
-[minimatch advisory](https://github.com/advisories/GHSA-g3hv-75wg-m249).
-
-For localhost-only testing:
-
-```sh
-make ui UI_ARGS=--http-only
-```
-
-Use Firefox on the Pi to open the local monitor/editor addresses above.
-Node-RED and Ollama bind to loopback; the phone uses the gateway's HTTPS port.
-After testing, commit Node-RED edits with ordinary Git. The editor's **Deploy**
-button saves `orchestration/node-red/flows.json`.
-
-## Phone HTTPS
-
-Phones need a trusted HTTPS origin for camera/microphone access. Generate a local
-development certificate for the gateway's current Wi-Fi IP:
-
-```sh
-.venv/bin/python gateway/make_certificate.py --host YOUR_GATEWAY_IP
-```
-
-Trust the generated public `.local/tls/development-ca.crt` on the test phone using
-its certificate settings, then open `https://YOUR_GATEWAY_IP:8443/`. Keep the
-private `gateway.key` local. The generator refuses to overwrite existing files.
-For a changed IP, archive the old `.local/tls` directory and generate a new one.
-Development certificates expire after 30 days. A deployed system can use a
-publicly trusted HTTPS name. Both devices need a network permitting local traffic.
+Python validates decisions and controller feedback against the message contracts.
+Invalid inference or unavailable services produce an error or clarification.
+The Pi shares CPU/RAM between the models and gateway services. Its end-to-end
+latency and physical-device integration still need hardware validation.
 
 ## Team boundaries
 
@@ -177,6 +325,33 @@ publicly trusted HTTPS name. Both devices need a network permitting local traffi
 - `tools/` contains setup/start commands; `.github/workflows/ci.yml` checks integration.
 
 See `contracts/README.md` for the input/output boundaries agreed across the team.
+
+## Notebook experiments
+
+- [Images and gestures](notebooks/image_gesture.ipynb) collects PIL RGB images and
+  provides an editable `predict_gesture(image)` example plus a live prediction loop.
+- [Audio](notebooks/audio.ipynb) collects mono 16 kHz NumPy samples, plays the captured
+  audio, and provides an editable `transcribe(audio)` example.
+
+Run `make ui`, open the phone URL, and select Audio or Video. Open the matching
+notebook on the gateway computer using the project's `.venv` kernel. Run Connect
+and the capture cell, then hold the phone's capture button. Captured data stays
+in notebook memory after release. The app's normal recognition continues during
+these experiments.
+
+Install the kernel and example dependencies with `make notebooks`. In VS Code,
+select the project's `.venv` as the notebook kernel. The Python and Jupyter
+extensions provide notebook editing and execution.
+[VS Code Linux installation](https://code.visualstudio.com/docs/setup/linux),
+[Python extension](https://marketplace.visualstudio.com/items?itemName=ms-python.python),
+[Jupyter extension](https://marketplace.visualstudio.com/items?itemName=ms-toolsai.jupyter).
+
+```sh
+make notebooks
+code --install-extension ms-python.python
+code --install-extension ms-toolsai.jupyter
+code .
+```
 
 ## Validation
 
@@ -196,7 +371,6 @@ References:
 - [LangChain ChatOllama](https://docs.langchain.com/oss/python/integrations/chat/ollama)
 - [Ollama structured output](https://docs.ollama.com/capabilities/structured-outputs)
 - [Model tags](https://ollama.com/library/qwen3.5/tags)
-- [Homebrew MLX structured-output issue](https://github.com/ollama/ollama/issues/18567)
 
 - [Piper neural speech engine and Python API](https://github.com/OHF-Voice/piper1-gpl/blob/main/docs/API_PYTHON.md)
 - [English voice model card](https://huggingface.co/rhasspy/piper-voices/blob/main/en/en_US/lessac/medium/MODEL_CARD)

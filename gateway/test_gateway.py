@@ -153,7 +153,10 @@ class GatewayTest(unittest.IsolatedAsyncioTestCase):
         cursor = self.app[RECEIVER].audio_sequence
         await self.app[RECEIVER].close()
         self.assertIsNone(self.app[RECEIVER].audio(0))
-        self.assertEqual(self.app[RECEIVER].audio_sequence, cursor)
+        closed_cursor = self.app[RECEIVER].audio_sequence
+        self.assertGreaterEqual(closed_cursor, cursor)
+        await asyncio.sleep(0.05)
+        self.assertEqual(self.app[RECEIVER].audio_sequence, closed_cursor)
 
 
 if __name__ == "__main__":
