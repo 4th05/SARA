@@ -39,6 +39,17 @@ class TestIntent:
 
 
 class StateTest(unittest.TestCase):
+    def test_warning_without_reported_state_stays_unconfirmed(self):
+        state = SystemState()
+        state.begin_batch(InputEvent(request_id='warning-no-state', text='kitchen on'),
+                          Decision(kind='command', device='kitchen', value=True, reply='Waiting.'))
+        state.feedback(Feedback(command_id='warning-no-state', device='kitchen', outcome='warning',
+                                reported_value=None, code='SUPPLY_WARNING', message='State unavailable.'))
+        result = state.complete_batch('warning-no-state')
+        self.assertIsNone(state.devices['kitchen']['confirmed'])
+        self.assertEqual(result['status'], 'warning')
+        self.assertIn('unconfirmed', result['reply'])
+
     def test_busy_room_rejects_entire_batch_before_changes(self):
         state = SystemState()
         state.begin(InputEvent(request_id="busy", text="kitchen on"),
@@ -355,13 +366,16 @@ class WorkflowTest(unittest.IsolatedAsyncioTestCase):
         self.runtime.recognition.voice_mode = 'automatic'
         self.runtime.speech.transcribe = lambda pcm: 'on'
         self.runtime.receiver.session = 'audio-test'
+        self.runtime.receiver.client_id = self.client.session.cookie_jar.filter_cookies(self.client.make_url('/'))['ioe_user'].value
         self.runtime.feed_audio(b'\x10\x10' * 6400, 0.2)
         self.runtime.feed_audio(b'\x00\x00' * 9600, 0)
         async with asyncio.timeout(5):
-            while self.runtime.state.devices['lights']['status'] != 'success':
+            while self.runtime.state.devices['lights']['status'] != 'success' or self.runtime.voice_busy:
                 await asyncio.sleep(0.05)
         self.assertTrue(self.runtime.state.devices['lights']['confirmed'])
         self.assertEqual(self.runtime.last_transcript, 'on')
+        data = await (await self.client.get('/api/user')).json()
+        self.assertEqual(data['events'][-1]['kind'], 'success')
 
 
 if __name__ == '__main__':

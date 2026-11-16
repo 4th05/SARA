@@ -8,7 +8,7 @@ make ui
 
 Open http://localhost:1880/ to see the **IoE workflow** graph. The web monitor at
 http://localhost:8080/?view=monitor requires Admin login and contains simulator settings, typed
-requests, recognition controls, device state, and the event log.
+requests, recognized inputs, device state, and the event log.
 
 The main tab shows three readable paths: commands, answers/clarification, and
 errors. Blue subflows contain the HTTP implementation. Double-click a blue node,

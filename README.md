@@ -50,7 +50,7 @@ does not cancel an accepted request. With **Audio** also selected, speech is pro
 For monitoring, click **Admin** on the same page and log in with `admin`.
 The password is configured with `ADMIN_PASSWORD` in the root `.env` file and is
 loaded on startup. `.env` is ignored by Git; `.env.example` provides the default.
-The admin monitor contains service health, live preview, transcripts, events,
+The admin monitor contains service health, live preview, transcripts, gestures, events,
 and simulator outcome dropdowns. Direct monitor URLs and admin APIs require the
 same login. Public users receive their own feedback log and audio.
 
@@ -110,7 +110,7 @@ runtime caches live under ignored local paths.
 
 The explicit GGUF model tag supports schema-constrained output on the tested Mac
 and avoids its Homebrew MLX packaging error. Python validates every decision and
-checks command targets against wording/context. Invalid inference or unavailable
+checks command targets and feedback against the message contracts. Invalid inference or unavailable
 services produce errors/clarification. Model interpretation still requires
 application-specific accuracy and latency evaluation before physical deployment.
 The model and speech/gesture services share CPU/RAM on the Pi; Pi performance
@@ -118,7 +118,7 @@ has yet to be measured.
 
 ## Install on another Mac or Ubuntu Raspberry Pi
 
-Install Python 3.12 with venv support, Node.js 24/npm, Git, and Ollama from its
+Install Python 3.12 with venv support, Node.js 24.15 or newer within version 24, npm, Git, and Ollama from its
 official installer. Clone the repository, then from its root:
 
 ```sh
@@ -127,6 +127,13 @@ official installer. Clone the repository, then from its root:
 
 This installs pinned Python and Node-RED dependencies and downloads local speech
 recognition, gesture recognition, neural voice, and LLM models.
+The Node-RED workspace overrides `body-parser`, `multer`, and npm versions to
+apply security updates. Normal startup runs Node-RED directly with Node.js.
+The 2026-11-16 dependency scan found no known Python vulnerabilities or high/critical
+Node dependency alerts. npm's bundled `glob` and `minimatch` still produce 24
+moderate alerts. Track their upstream fixes when updating the lockfile.
+[glob advisory](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4),
+[minimatch advisory](https://github.com/advisories/GHSA-g3hv-75wg-m249).
 
 For localhost-only testing:
 
@@ -166,8 +173,6 @@ publicly trusted HTTPS name. Both devices need a network permitting local traffi
 - `tools/` contains setup/start commands; `.github/workflows/ci.yml` checks integration.
 
 See `contracts/README.md` for the input/output boundaries agreed across the team.
-The previous Arduino camera experiment, toolchain, and VS Code configuration
-were archived under `.local/archive/before-workflow-*` for recovery.
 
 ## Validation
 
@@ -192,4 +197,3 @@ References:
 - [Piper neural speech engine and Python API](https://github.com/OHF-Voice/piper1-gpl/blob/main/docs/API_PYTHON.md)
 - [English voice model card](https://huggingface.co/rhasspy/piper-voices/blob/main/en/en_US/lessac/medium/MODEL_CARD)
 - [Portuguese voice model card](https://huggingface.co/rhasspy/piper-voices/blob/main/pt/pt_BR/faber/medium/MODEL_CARD)
-- [Browser voice availability](https://developer.mozilla.org/en-US/docs/Web/API/SpeechSynthesis/getVoices)

@@ -27,15 +27,10 @@ class Action(Message):
     value: bool
 
 
-class IntentPlan(Message):
+class Decision(Message):
     kind: Literal["command", "clarify", "status", "reply"]
-    actions: list[Action] = Field(max_length=4)
-    reply: str = Field(min_length=1, max_length=500)
-    language: Literal["en", "pt"]
-
-
-class Decision(IntentPlan):
     actions: list[Action] = Field(default_factory=list, max_length=4)
+    reply: str = Field(min_length=1, max_length=500)
     language: Literal["en", "pt"] = "en"
     # Accept the original single-device contract used by existing adapters.
     device: Device | None = None

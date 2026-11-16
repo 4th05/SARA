@@ -1,4 +1,5 @@
 """Speak only requested actions and outcomes confirmed by controller feedback."""
+from gateway.contracts import Action, ROOMS
 
 NAMES = {
     "en": {"bathroom": "the bathroom light", "kitchen": "the kitchen light", "bedroom": "the bedroom light",
@@ -11,9 +12,7 @@ NAMES = {
 def acknowledge(actions, language="en"):
     rooms = {action.device for action in actions}
     values = {action.value for action in actions}
-    if rooms == {"bathroom", "kitchen", "bedroom"} and len(values) == 1:
-        from gateway.contracts import Action
-
+    if rooms == set(ROOMS) and len(values) == 1:
         actions = [Action(device="lights", value=actions[0].value)]
     requests = []
     for action in actions:
@@ -29,6 +28,10 @@ def acknowledge(actions, language="en"):
 
 def describe_feedback(feedback, language="en"):
     name = NAMES[language][feedback.device]
+    if feedback.outcome == "warning" and feedback.reported_value is None:
+        if language == "pt":
+            return f"O controlador informou um aviso para {name}. O estado solicitado continua sem confirmação."
+        return f"The controller reported a warning for {name}. The requested state remains unconfirmed."
     if language == "pt":
         if feedback.outcome in ("success", "warning"):
             state = "ligada" if feedback.reported_value else "desligada"
@@ -49,16 +52,3 @@ def describe_feedback(feedback, language="en"):
     if feedback.outcome == "timeout":
         return f"No confirmation arrived for {name}."
     return f"The controller rejected the command for {name}."
-
-
-def describe_state(devices, language="en"):
-    sentences = []
-    for device, confirmed in devices.items():
-        name = NAMES[language][device]
-        if language == "pt":
-            state = "sem confirmação" if confirmed is None else "ligada" if confirmed else "desligada"
-            sentences.append(f"{name.capitalize()} está {state}.")
-        else:
-            state = "unconfirmed" if confirmed is None else "on" if confirmed else "off"
-            sentences.append(f"{name.capitalize()} is {state}.")
-    return " ".join(sentences)

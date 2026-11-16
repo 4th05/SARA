@@ -20,16 +20,16 @@ requests with an anonymous HttpOnly browser cookie. Node-RED receives the same i
 ```
 
 Sources are `text`, `voice`, and `gesture`. Voice input contains the transcript.
-Gesture input contains the recognized label. The reference mapping is
-`Open_Palm` → all three lights on and `Closed_Fist` → all three lights off, with confidence >= 0.8.
-Camera recognition requires three consecutive detections and sends one event
-per held gesture. These mappings are provisional and should be agreed with the
-ML teammate and intended users.
+Gesture input contains the recognized label. MediaPipe recognizes `Thumb_Up`
+or `Thumb_Down` across three consecutive frames with confidence >= 0.7. One
+gesture is accepted per capture. Ollama interprets thumbs-up as all three lights
+on and thumbs-down as all three lights off through the same workflow as speech.
 
 ## Interpreted actions and request batches
 
-Ollama returns `kind`, an `actions` list, `reply`, and `language` (`en` or `pt`).
-For example, a mixed request becomes:
+Ollama returns a nullable boolean for each room, a response kind, reply, and
+language (`en` or `pt`). Python validates this plan and produces a `Decision`
+with `kind`, `actions`, `reply`, and `language`. A mixed request becomes:
 
 ```json
 {"kind":"command","actions":[{"device":"kitchen","value":true},{"device":"bedroom","value":false}],"reply":"I will request those changes.","language":"en"}
@@ -87,8 +87,9 @@ when the gateway restarts.
 `language` and the exact spoken text in `message`. Using the same browser session, fetch `GET /api/speech/<sequence>.wav` for real local TTS audio. The web
 app queues these in sequence and provides an audio player for replay. The event
 history and audio cache are bounded and never persisted. `POST /api/speech/test`
-creates a short voice-output check. Voice input still arrives through WebRTC,
-is transcribed by Whisper, and goes through the actual Ollama/Node-RED workflow.
+creates a short voice-output check. Browser audio recordings are transcribed by
+Whisper and go through the Ollama/Node-RED workflow. WebRTC supplies live media
+to the admin monitor and notebook.
 
 ## Hold-to-capture and admin access
 
@@ -109,5 +110,7 @@ The existing private Node-RED service token remains required for `/internal/`.
 
 The earlier session-based `POST /api/voice` recording interface remains available
 for adapters. New browser clients use `/api/recording` so no audio is lost during
-WebRTC negotiation. Video-only completion produces a spoken notice that gesture
-recognition is not enabled yet, with no device actions.
+WebRTC negotiation. `POST /api/video/complete` accepts the camera session ID and
+finishes classification of queued frames. Accepted gestures continue processing
+after the camera connection closes. Unrecognized video produces a spoken retry
+message. Feedback and audio remain associated with the same browser user.

@@ -8,7 +8,6 @@
   let closing = false;
   let waiting = false;
   let serverBusy = false;
-  let speaking = false;
   let admin = false;
   let timer = null;
   let captureTimer = null;
@@ -117,14 +116,11 @@
   }
   player.onplay = () => {
     if (!audioURL) return;
-    speaking = true;
     element('audio-status').textContent = 'Speaking…';
     updateControls();
   };
-  player.onpause = () => { speaking = false; };
   player.onended = () => {
     if (!audioURL) return;
-    speaking = false;
     playing = false;
     element('audio-status').textContent = 'Reply finished';
     if (!waiting && !serverBusy && !held) status('Ready');
@@ -133,7 +129,6 @@
   };
   player.onerror = () => {
     if (!audioURL) return;
-    speaking = false;
     playing = false;
     element('audio-status').textContent = 'Audio playback failed. Tap Replay last reply.';
     updateControls();

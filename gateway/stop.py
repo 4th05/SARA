@@ -25,7 +25,7 @@ def project_service(process, service_ports):
     node_red = executable == 'node-red' or (
         executable == 'node' and any('/node-red/' in argument for argument in arguments[1:]))
     ollama = executable == 'ollama' and len(arguments) > 1 and arguments[1] in ('serve', 'runner')
-    launcher = executable in ('start_system.sh', 'start_node_red.sh', 'npm start') or (
+    launcher = executable in ('start_node_red.sh', 'npm start') or (
         executable == 'npm' and 'start' in arguments[1:])
     if not (gateway or node_red or ollama or launcher):
         return False

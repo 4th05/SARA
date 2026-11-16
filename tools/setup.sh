@@ -20,6 +20,7 @@ if [ ! -x .venv/bin/python ]; then
     fi
     "$python_command" -m venv .venv
 fi
+.venv/bin/python -m pip install --upgrade 'pip>=26.2'
 .venv/bin/python -m pip install -r gateway/requirements.txt
 npm --prefix orchestration/node-red ci
 exec .venv/bin/python -m gateway.download_models "$@"

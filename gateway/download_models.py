@@ -22,8 +22,6 @@ def online(url):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--with-gesture", action="store_true",
-                        help="Compatibility option; gesture models are now installed by default.")
     parser.parse_args()
     settings = load_settings()
     (LOCAL / "models").mkdir(parents=True, exist_ok=True)

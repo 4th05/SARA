@@ -5,7 +5,7 @@ import time
 
 from gateway.contracts import (CommandBatch, Decision, DeviceCommand, Feedback,
                                InputEvent, ROOMS, DEVICES)
-from gateway.responses import acknowledge, describe_feedback
+from gateway.responses import describe_feedback
 
 
 class SystemState:

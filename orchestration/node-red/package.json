@@ -4,12 +4,17 @@
   "private": true,
   "description": "Node-RED workflow workspace for the assistive IoE gateway",
   "engines": {
-    "node": "24.x"
+    "node": ">=24.15.0 <25"
   },
   "scripts": {
     "start": "node-red --settings settings.js"
   },
   "dependencies": {
     "node-red": "5.0.9"
+  },
+  "overrides": {
+    "body-parser": "1.20.9",
+    "multer": "2.5.0",
+    "npm": "12.2.2"
   }
 }

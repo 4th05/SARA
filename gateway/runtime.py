@@ -7,7 +7,7 @@ import uuid
 from aiohttp import ClientError, ClientSession, ClientTimeout, web
 
 from gateway.contracts import (Decision, DeviceCommand, Feedback,
-                               FeedbackBatch, InputEvent, MockSetting, RecognitionSetting)
+                               FeedbackBatch, InputEvent, MockSetting, RecognitionSetting, ROOMS)
 from gateway.devices.mock import MockDevices
 from gateway.recognition.gesture import GestureRecognizer, MIN_GESTURE_CONFIDENCE
 from gateway.recognition.intent import IntentService
@@ -136,6 +136,8 @@ class SystemRuntime:
         self.voice_status = "Transcribing your recording…"
 
     def feed_audio(self, pcm, level):
+        if not self.receiver.client_id:
+            return
         if not self.recognition.voice_enabled:
             self.reset_recording()
             return
@@ -147,7 +149,8 @@ class SystemRuntime:
             return
         utterance = self.speech_buffer.feed(pcm, level)
         if utterance and not self.audio_queue.full():
-            self.audio_queue.put_nowait((self.receiver.session, utterance))
+            self.processing.add(self.receiver.client_id)
+            self.audio_queue.put_nowait((self.receiver.client_id, utterance))
 
     def feed_video(self, frame):
         session, owner = self.receiver.session, self.receiver.client_id
@@ -165,7 +168,7 @@ class SystemRuntime:
 
     async def voice_worker(self):
         while True:
-            session, pcm = await self.audio_queue.get()
+            client_id, pcm = await self.audio_queue.get()
             try:
                 self.voice_busy = True
                 self.voice_status = "Transcribing speech locally…"
@@ -173,17 +176,17 @@ class SystemRuntime:
                 self.last_transcript = text
                 if text:
                     self.voice_status = "Interpreting speech through Node-RED and Ollama…"
-                    await self.submit(InputEvent(request_id=str(uuid.uuid4()), conversation_id=session or "voice",
+                    await self.submit(InputEvent(request_id=str(uuid.uuid4()), conversation_id=client_id,
                                                  source="voice", text=text, language=self.speech.language))
                 if not text:
-                    self.state.event("clarify", "I could not hear a command. Please try again.", speak=True, language="en", conversation_id=session)
-                self.voice_status = "Ready. Hold to speak."
+                    self.state.event("clarify", "I could not hear a command. Please try again.", speak=True, language="en", conversation_id=client_id)
+                self.voice_status = "Ready. Hold to capture."
             except Exception as error:
                 self.voice_status = "Speech processing failed. Check the event log."
-                self.state.event("error", f"Speech processing failed: {error}", speak=True, language="en", conversation_id=session)
+                self.state.event("error", f"Speech processing failed: {error}", speak=True, language="en", conversation_id=client_id)
             finally:
                 self.voice_busy = False
-                self.processing.discard(session)
+                self.processing.discard(client_id)
                 self.audio_queue.task_done()
 
     async def gesture_worker(self):
@@ -257,7 +260,7 @@ class SystemRuntime:
         async def user_state(request):
             client = request[CLIENT]
             return web.json_response({
-                'devices': {name: self.state.devices[name] for name in ('bathroom', 'kitchen', 'bedroom')},
+                'devices': {name: self.state.devices[name] for name in ROOMS},
                 'events': [event for event in self.state.events if event.get('speak')
                            and event.get('conversation_id') == client],
                 'busy': client in self.processing or client in self.gesture_jobs.values(),

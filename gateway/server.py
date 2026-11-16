@@ -1,5 +1,4 @@
 """Local WebRTC media gateway: phone browser -> Mac or Raspberry Pi."""
-import argparse
 from array import array
 import asyncio
 from collections import deque
@@ -8,7 +7,6 @@ from io import BytesIO
 import math
 from pathlib import Path
 import secrets
-import ssl
 import sys
 import time
 import wave
@@ -204,11 +202,9 @@ def create_app(system=False):
 
         app.on_startup.append(startup)
 
-    async def index(request):
-        return web.Response(text=(ROOT / "web/index.html").read_text(), content_type="text/html")
-
-    async def system_script(request):
-        return web.Response(text=(ROOT / "web/system.js").read_text(), content_type="application/javascript")
+    async def static_file(request):
+        filename = request.match_info.get('filename', 'index.html')
+        return web.FileResponse(ROOT / 'web' / filename)
 
     async def offer(request):
         if request.content_type != "application/json":
@@ -293,8 +289,8 @@ def create_app(system=False):
         return web.Response(status=204)
 
     app[EXPIRY_TASKS] = set()
-    app.router.add_get("/", index)
-    app.router.add_get("/system.js", system_script)
+    app.router.add_get("/", static_file)
+    app.router.add_get(r"/{filename:system\.js|style\.css}", static_file)
     app.router.add_post("/api/offer", offer)
     app.router.add_get("/api/status", status)
     app.router.add_get("/api/frame.jpg", image)
@@ -311,45 +307,3 @@ def create_app(system=False):
 
     app.on_shutdown.append(shutdown)
     return app
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8080)
-    parser.add_argument("--cert", type=Path)
-    parser.add_argument("--key", type=Path)
-    parser.add_argument("--monitor-port", type=int, default=8080,
-                        help="Loopback-only HTTP monitor when HTTPS is enabled")
-    parser.add_argument("--system", action="store_true", help="Enable the Node-RED and local AI workflow")
-    args = parser.parse_args()
-    if bool(args.cert) != bool(args.key):
-        parser.error("Provide both --cert and --key.")
-    context = None
-    if args.cert:
-        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        context.minimum_version = ssl.TLSVersion.TLSv1_2
-        context.load_cert_chain(args.cert, args.key)
-    elif args.host not in ("127.0.0.1", "localhost", "::1"):
-        parser.error("Phone access over Wi-Fi requires --cert and --key for HTTPS.")
-    app = create_app(system=args.system)
-
-    async def serve():
-        runner = web.AppRunner(app, access_log=None)
-        await runner.setup()
-        try:
-            await web.TCPSite(runner, args.host, args.port, ssl_context=context).start()
-            if context:
-                await web.TCPSite(runner, "127.0.0.1", args.monitor_port).start()
-                print(f"Mac/Pi monitor: http://localhost:{args.monitor_port}/?view=monitor", flush=True)
-                print(f"Phone: https://<gateway Wi-Fi address>:{args.port}/", flush=True)
-            else:
-                print(f"Local preview: http://localhost:{args.port}/", flush=True)
-            await asyncio.Event().wait()
-        finally:
-            await runner.cleanup()
-
-    try:
-        asyncio.run(serve())
-    except KeyboardInterrupt:
-        pass

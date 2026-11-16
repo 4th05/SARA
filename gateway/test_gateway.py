@@ -10,7 +10,7 @@ from aiortc import AudioStreamTrack, RTCConfiguration, RTCPeerConnection, RTCSes
 from av import VideoFrame
 from PIL import Image
 
-from server import RECEIVER, create_app
+from gateway.server import RECEIVER, create_app
 
 
 class RedVideo(VideoStreamTrack):
