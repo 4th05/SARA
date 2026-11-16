@@ -1,4 +1,8 @@
-# Adaptive Assistive IoE
+# SARA — Smart Assistive Residential Assistant
+
+SARA is an LLM-powered home assistant designed to support independence for people
+with disabilities through voice and gesture control. It connects everyday devices
+to a local assistant that interprets requests and provides spoken feedback.
 
 A phone browser sends camera/microphone media to a local Python gateway. Whisper
 transcribes speech, LangChain/Ollama interprets requests, and Node-RED coordinates
@@ -10,7 +14,7 @@ success, warning, error, and timeout behavior is selectable in the web interface
 
 ## Start on this Mac
 
-From the IoE folder:
+From the SARA folder:
 
 ```sh
 make ui
